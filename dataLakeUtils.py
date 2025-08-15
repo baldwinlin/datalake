@@ -6,7 +6,7 @@ Object          : The main function of XUtil process.
                          FL - Ftp loader
                          FW - Ftp writter
                          SQL - SQL execution
-                  Ex: python dataLakeUtils.py -un FL --mc .\conf\main.conf -fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
+                  Ex: python dataLakeUtils.py -fun FL --mc .\conf\main.conf -fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
                   python dataLakeUtils.py -fun SQL --mc .\conf\main.conf -fc .\conf\sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
 Author          :
 Version         :
