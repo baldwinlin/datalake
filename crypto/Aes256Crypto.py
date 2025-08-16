@@ -13,12 +13,12 @@ Output          :
 Modify          :
 '''
 
-from Crypto.Util.Padding import pad, unpad
-from Crypto.Random import get_random_bytes
 import base64
 import gnupg
 
 '''
+from Crypto.Util.Padding import pad, unpad
+from Crypto.Random import get_random_bytes
 from Crypto.Cipher import AES
 def aes256Enrypt(plain_text, key):
     iv = get_random_bytes(16)  # 生成隨機初始化向量
@@ -53,7 +53,8 @@ def readSecFile(sec_file):
 def readSaltFile(salt_file):
     try:
         file = open(salt_file, "r")
-        salt = file.readline().strip('\n')
+        line = file.readline().strip('\n')
+        salt = line[5:]
     except Exception as e:  # Catching a more general exception for demonstration
         print(f"An error occurred during file writing: {e}")
     return salt

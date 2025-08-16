@@ -21,9 +21,10 @@ import abc
 
 class SqlExecution(abc.ABC):
 
-    '''
-        @ftp_config_file/@sql_file/@date : from command argument
-    '''
     @abc.abstractmethod
-    def executeSql(self, ftp_config_file, sql_file, date):
+    def __init__(self):
+        return NotImplemented
+
+    @abc.abstractmethod
+    def run(self, ftp_config_file, sql_file, date):
         return NotImplemented

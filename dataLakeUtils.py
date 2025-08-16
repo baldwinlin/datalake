@@ -25,6 +25,9 @@ from service.impl.FtpLoaderImpl import *
 from service.impl.SqlExecutionImpl  import *
 import json
 from service.impl.DbtExecutionImpl import *
+import logging
+from logger import Logger
+from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
 
 
 from crypto.Aes256Crypto import *
@@ -45,9 +48,12 @@ def run(fun, config, fc_args, sql_file):
         print("Run FTP Writer")
 
     elif(fun == 'SQL'):
+        logger_main.info("Run SQL Exception")
         print("Run SQL Execution")
         sql_execution = SqlExecutionImpl(config, fc_args, sql_file)
-        sql_execution.run()
+        sql_execution.setLog(logger_main, errorHandler)
+        if(sql_execution.run()):
+            logger_main.info("Run SQL Exception success")
 
     elif(fun == 'DBT'):
         print("Run DBT Execution")
@@ -82,12 +88,23 @@ if __name__ == '__main__':
     sql_file = args.sqlfile
 
     # 建立 main ConfigParser
+    global main_config
     main_config = configparser.ConfigParser()
     main_config.read(main_confg_file)
 
     # 建立 fuction ConfigParser
     fc_config = configparser.ConfigParser()
     fc_config.read(function_config_file)
+
+    # 創建兩個 Logger 實例
+    Logger.Logger(main_config['LOG']['LOG_PATH'], main_config['LOG']['LOG_NAME'])  # 主要日誌
+    Logger.Logger(main_config['LOG']['LOG_PATH'], main_config['LOG']['ERROR_HANDLER'])  # 錯誤日誌
+
+    # 取得主要 logger 實例
+    logger_main = logging.getLogger(main_config['LOG']['LOG_NAME'])
+
+    # 創建錯誤處理器
+    errorHandler = dataLakeUtilsErrorHandler(main_config['LOG']['ERROR_HANDLER'])
 
 
     run(fun, fc_config, fc_args, sql_file)

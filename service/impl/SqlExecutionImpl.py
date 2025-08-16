@@ -22,7 +22,10 @@ import json
 
 from crypto.Aes256Crypto import *
 from service.SqlExecution import *
-from dao.impl.SqlDaoImpl import SqlDaoImpl
+from dao.impl.JdbcDaoImpl import JdbcDaoImpl
+import logging
+from logger import Logger
+from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
 
 class SqlExecutionImpl(SqlExecution):
 
@@ -40,11 +43,18 @@ class SqlExecutionImpl(SqlExecution):
         self.salt = readSaltFile(self.db_sec_key_file)
         #self.db_sec = aes256Decrypt(self.sec_str, bytes.fromhex(self.salt))
         self.db_sec = get_gpg_decrypt(self.sec_str, self.salt)
+        self.logger_main = None
+        self.errorHandler = None
+
+    def setLog(self, logger_main, errorHandler):
+        self.logger_main = logger_main
+        self.errorHandler = errorHandler
 
 
     def run(self):
-        print("SQL Execution running ...")
+        self.logger_main.info("Run SQL Exception ...")
 
+        #Read SQL file to SQL string
         try:
             with open(self.sql_file, "r") as file:
                 sql_str = file.read()
@@ -57,14 +67,38 @@ class SqlExecutionImpl(SqlExecution):
         for key,value in args_dict.items():
             new_sql_str = sql_str.replace(key, value)
 
-        print("SQL scripts: ", new_sql_str)
+        #print("SQL scripts: ", new_sql_str)
+        self.logger_main.info(f'SQL scripts: \n{new_sql_str}')
 
-        sqlDao = SqlDaoImpl(self.host, self.port, self.user, self.db_sec, self.db_name, self.driver)
-        sqlDao.executeSql(new_sql_str)
+        # sqlDao = SqlDaoImpl(self.host, self.port, self.user, self.db_sec, self.db_name, self.driver)
+        # sqlDao.executeSql(new_sql_str)
 
+        #Connect DB and execute SQL
+        if(self.driver == 'hive2'):
+            driver_class = "org.apache.kyuubi.jdbc.KyuubiHiveDriver"
+            jdbc_url = f"jdbc:hive2://{self.host}:{self.port}/{self.db_name};auth=LDAP"
+            driver_jar = "./kyuubi-hive-jdbc-shaded-1.10.2.jar"
+        elif(self.driver == 'mysql'):
+            driver_class = "com.mysql.cj.jdbc.Driver"
+            jdbc_url = f"jdbc:mysql://{self.host}:{self.port}/{self.db_name}"
+            driver_jar = "C:\\Users\\Baldwin\\PycharmProjects\\mysql-connector-j-9.4.0.jar"
 
-    '''
-        @ftp_config_file/@sql_file/@date : from command argument
-    '''
-    def executeSql(self, ftp_config_file, sql_file, date):
-        pass
+        dao = JdbcDaoImpl(driver_class, jdbc_url, self.user, self.db_sec, driver_jar)
+
+        try:
+            dao.connect()
+            self.logger_main.info('資料庫連線完成')
+        except Exception as e:
+            self.logger_main.error('資料庫連線失敗')
+            self.errorHandler.exceptionWriter(f"[連線資料庫錯誤] {e}")
+            exit(1)
+
+        try:
+            dao.executeSql(new_sql_str)
+            self.logger_main.info('執行SQL完成')
+        except Exception as e:
+            self.logger_main.error('執行SQL失敗')
+            self.errorHandler.exceptionWriter(f"[執行SQL錯誤] {e}")
+            exit(1)
+
+        return True
