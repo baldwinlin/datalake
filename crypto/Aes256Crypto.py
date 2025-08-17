@@ -45,7 +45,7 @@ def readSecFile(sec_file):
         line = file.readline().strip('\n')
         sec = line[7:]
     except Exception as e:  # Catching a more general exception for demonstration
-        print(f"An error occurred during file writing: {e}")
+        raise Exception(f"讀取密碼檔錯誤: {e}")
 
     #print(f"user={username}, sec={sec}")
     return username, sec
@@ -56,7 +56,7 @@ def readSaltFile(salt_file):
         line = file.readline().strip('\n')
         salt = line[5:]
     except Exception as e:  # Catching a more general exception for demonstration
-        print(f"An error occurred during file writing: {e}")
+        raise Exception(f"讀取salt檔錯誤: {e}")
     return salt
 
 def get_gpg_decrypt(key, salt):

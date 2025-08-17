@@ -19,6 +19,7 @@ Output          :
 Modify          :
 '''
 import sys
+import os
 import configparser
 import argparse
 from service.impl.FtpLoaderImpl import *
@@ -50,7 +51,13 @@ def run(fun, config, fc_args, sql_file):
     elif(fun == 'SQL'):
         logger_main.info("Run SQL Exception")
         print("Run SQL Execution")
-        sql_execution = SqlExecutionImpl(config, fc_args, sql_file)
+        try:
+            sql_execution = SqlExecutionImpl(config, fc_args, sql_file)
+        except Exception as e:
+            logger_main.error(f"建立SqlExecutionImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"建立SqlExecutionImpl錯誤 {e}")
+            exit(1)
+
         sql_execution.setLog(logger_main, errorHandler)
         if(sql_execution.run()):
             logger_main.info("Run SQL Exception success")
@@ -87,8 +94,15 @@ if __name__ == '__main__':
     fc_args = args.args
     sql_file = args.sqlfile
 
+    #判斷檔案是否存在
+    if not os.path.exists(main_confg_file):
+        print("主設定檔不存在")
+        exit(1)
+    if not os.path.exists(function_config_file):
+        print("功能設定檔不存在")
+        exit(1)
+
     # 建立 main ConfigParser
-    global main_config
     main_config = configparser.ConfigParser()
     main_config.read(main_confg_file)
 
@@ -105,7 +119,6 @@ if __name__ == '__main__':
 
     # 創建錯誤處理器
     errorHandler = dataLakeUtilsErrorHandler(main_config['LOG']['ERROR_HANDLER'])
-
 
     run(fun, fc_config, fc_args, sql_file)
 

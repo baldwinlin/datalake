@@ -32,12 +32,18 @@ class SqlExecutionImpl(SqlExecution):
     def __init__(self, config, args_str, sql_file):
         self.config = config
         self.args_str = args_str
-        self.host = self.config['DB']['HOST']
-        self.port = self.config['DB']['PORT']
-        self.db_sec_file = self.config['DB']['SEC_FILE']
-        self.db_sec_key_file = self.config['DB']['KEY_FILE']
-        self.db_name = self.config['DB']['DB_NAME']
-        self.driver = self.config['DB']['DRIVER']
+
+        try:
+            self.host = self.config.get('DB','HOST')
+            self.port = self.config.get('DB','PORT')
+            self.db_sec_file = self.config.get('DB','SEC_FILE')
+            self.db_sec_key_file = self.config.get('DB','KEY_FILE')
+            self.db_name = self.config.get('DB','DB_NAME')
+            self.driver = self.config.get('DB','DRIVER')
+        except Exception as e:
+            raise Exception(f"讀取DB config錯誤: {e}")
+
+
         self.sql_file = sql_file
         self.user, self.sec_str = readSecFile(self.db_sec_file)
         self.salt = readSaltFile(self.db_sec_key_file)
@@ -59,7 +65,10 @@ class SqlExecutionImpl(SqlExecution):
             with open(self.sql_file, "r") as file:
                 sql_str = file.read()
         except Exception as e:  # Catching a more general exception for demonstration
-            print(f"An error occurred during file writing: {e}")
+            self.logger_main.error(f"讀取SQL file錯誤: {e}")
+            self.errorHandler.exceptionWriter(f"[連線資料庫錯誤] {e}")
+            exit(1)
+
 
         #Replace SQL arguments
         args_dict = json.loads(self.args_str)
