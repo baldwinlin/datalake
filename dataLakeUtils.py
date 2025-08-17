@@ -37,7 +37,7 @@ def readConfig(config_file):
     pass
 
 
-def run(fun, config, fc_args, sql_file):
+def run(fun, main_config, config, fc_args, sql_file):
 
     print("")
     if(fun == 'FL'):
@@ -52,7 +52,7 @@ def run(fun, config, fc_args, sql_file):
         logger_main.info("Run SQL Exception")
         print("Run SQL Execution")
         try:
-            sql_execution = SqlExecutionImpl(config, fc_args, sql_file)
+            sql_execution = SqlExecutionImpl(main_config, config, fc_args, sql_file)
         except Exception as e:
             logger_main.error(f"建立SqlExecutionImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"建立SqlExecutionImpl錯誤 {e}")
@@ -120,5 +120,5 @@ if __name__ == '__main__':
     # 創建錯誤處理器
     errorHandler = dataLakeUtilsErrorHandler(main_config['LOG']['ERROR_HANDLER'])
 
-    run(fun, fc_config, fc_args, sql_file)
+    run(fun, main_config, fc_config, fc_args, sql_file)
 

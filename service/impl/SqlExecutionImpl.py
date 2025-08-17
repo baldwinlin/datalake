@@ -29,8 +29,9 @@ from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
 
 class SqlExecutionImpl(SqlExecution):
 
-    def __init__(self, config, args_str, sql_file):
+    def __init__(self, main_config, config, args_str, sql_file):
         self.config = config
+        self.main_config = main_config
         self.args_str = args_str
 
         try:
@@ -42,6 +43,11 @@ class SqlExecutionImpl(SqlExecution):
             self.driver = self.config.get('DB','DRIVER')
         except Exception as e:
             raise Exception(f"讀取DB config錯誤: {e}")
+
+        try:
+            self.driver_path = self.main_config.get('DB_DRIVER','DRIVER_PATH')
+        except Exception as e:
+            raise Exception(f"讀取DB dreiver path錯誤: {e}")
 
 
         self.sql_file = sql_file
@@ -86,11 +92,11 @@ class SqlExecutionImpl(SqlExecution):
         if(self.driver == 'hive2'):
             driver_class = "org.apache.kyuubi.jdbc.KyuubiHiveDriver"
             jdbc_url = f"jdbc:hive2://{self.host}:{self.port}/{self.db_name};auth=LDAP"
-            driver_jar = "./kyuubi-hive-jdbc-shaded-1.10.2.jar"
+            driver_jar = f"{self.driver_path}/kyuubi-hive-jdbc-shaded-1.10.2.jar"
         elif(self.driver == 'mysql'):
             driver_class = "com.mysql.cj.jdbc.Driver"
             jdbc_url = f"jdbc:mysql://{self.host}:{self.port}/{self.db_name}"
-            driver_jar = "C:\\Users\\Baldwin\\PycharmProjects\\mysql-connector-j-9.4.0.jar"
+            driver_jar = f"{self.driver_path}\\mysql-connector-j-9.4.0.jar"
 
         dao = JdbcDaoImpl(driver_class, jdbc_url, self.user, self.db_sec, driver_jar)
 
