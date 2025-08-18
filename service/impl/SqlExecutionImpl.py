@@ -72,7 +72,7 @@ class SqlExecutionImpl(SqlExecution):
                 sql_str = file.read()
         except Exception as e:  # Catching a more general exception for demonstration
             self.logger_main.error(f"讀取SQL file錯誤: {e}")
-            self.errorHandler.exceptionWriter(f"[連線資料庫錯誤] {e}")
+            self.errorHandler.exceptionWriter(f"[讀取SQL file錯誤] {e}")
             exit(1)
 
 
@@ -104,7 +104,7 @@ class SqlExecutionImpl(SqlExecution):
             dao.connect()
             self.logger_main.info('資料庫連線完成')
         except Exception as e:
-            self.logger_main.error('資料庫連線失敗')
+            self.logger_main.error(f'資料庫連線失敗 {e}')
             self.errorHandler.exceptionWriter(f"[連線資料庫錯誤] {e}")
             exit(1)
 
@@ -112,7 +112,7 @@ class SqlExecutionImpl(SqlExecution):
             dao.executeSql(new_sql_str)
             self.logger_main.info('執行SQL完成')
         except Exception as e:
-            self.logger_main.error('執行SQL失敗')
+            self.logger_main.error(f'執行SQL錯誤 {e}')
             self.errorHandler.exceptionWriter(f"[執行SQL錯誤] {e}")
             exit(1)
 
