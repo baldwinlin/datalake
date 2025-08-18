@@ -64,7 +64,8 @@ class SqlExecutionImpl(SqlExecution):
 
 
     def run(self):
-        self.logger_main.info("Run SQL Exception ...")
+        self.logger_main.info(f"SQL file = {self.sql_file}")
+        self.logger_main.info(f"SQL args = {self.args_str}")
 
         #Read SQL file to SQL string
         try:
@@ -77,16 +78,14 @@ class SqlExecutionImpl(SqlExecution):
 
 
         #Replace SQL arguments
-        args_dict = json.loads(self.args_str)
+        if(self.args_str is not None):
+            args_dict = json.loads(self.args_str)
 
-        for key,value in args_dict.items():
-            new_sql_str = sql_str.replace(key, value)
+            for key,value in args_dict.items():
+                sql_str = sql_str.replace(key, value)
 
-        #print("SQL scripts: ", new_sql_str)
-        self.logger_main.info(f'SQL scripts: \n{new_sql_str}')
-
-        # sqlDao = SqlDaoImpl(self.host, self.port, self.user, self.db_sec, self.db_name, self.driver)
-        # sqlDao.executeSql(new_sql_str)
+        #print("SQL scripts: ", sql_str)
+        self.logger_main.info(f'SQL scripts: \n{sql_str}')
 
         #Connect DB and execute SQL
         if(self.driver == 'hive2'):
@@ -109,7 +108,7 @@ class SqlExecutionImpl(SqlExecution):
             exit(1)
 
         try:
-            dao.executeSql(new_sql_str)
+            dao.executeSql(sql_str)
             self.logger_main.info('執行SQL完成')
         except Exception as e:
             self.logger_main.error(f'執行SQL錯誤 {e}')
