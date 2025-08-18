@@ -8,6 +8,10 @@ Object          : The main function of XUtil process.
                          SQL - SQL execution
                   Ex: python dataLakeUtils.py -fun FL --mc .\conf\main.conf -fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
                   python dataLakeUtils.py -fun SQL --mc .\conf\main.conf -fc .\conf\sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
+                  mac : python dataLakeUtils.py --fun DBT --mc "./conf/main.conf" --fc "./conf/dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
+                  windows : python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"uat\",\"debug\":\"--debug\"}"
+                  windows : python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"prod\",\"debug\":\"--debug\"}"
+
 Author          :
 Version         :
 Date written    :
@@ -63,9 +67,16 @@ def run(fun, main_config, config, fc_args, sql_file):
             logger_main.info("Run SQL Exception success")
 
     elif(fun == 'DBT'):
-        print("Run DBT Execution")
-        dbt_execution = DbtExecutionImpl(config, fc_args)
-        dbt_execution.run()
+        logger_main.info("Run DBT Execution")
+        try:
+            dbt_execution = DbtExecutionImpl(config, fc_args)
+        except Exception as e:
+            logger_main.error(f"建立DbtExecutionImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"建立DbtExecutionImpl錯誤 {e}")
+            exit(1)
+        dbt_execution.setLog(logger_main, errorHandler)
+        if(dbt_execution.run()):
+            logger_main.info("Run DBT Execution success")
 
     else:
         print("No such function")
