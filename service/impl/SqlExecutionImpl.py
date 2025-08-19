@@ -26,6 +26,9 @@ from dao.impl.JdbcDaoImpl import JdbcDaoImpl
 import logging
 from logger import Logger
 from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
+from pathlib import Path
+from datetime import datetime
+
 
 class SqlExecutionImpl(SqlExecution):
 
@@ -49,6 +52,12 @@ class SqlExecutionImpl(SqlExecution):
         except Exception as e:
             raise Exception(f"讀取DB dreiver path錯誤: {e}")
 
+        try:
+            self.log_path = self.main_config.get('LOG','LOG_PATH')
+            self.log_name = ""
+        except Exception as e:
+            raise Exception(f"讀取LOG path錯誤: {e}")
+
 
         self.sql_file = sql_file
         self.user, self.sec_str = readSecFile(self.db_sec_file)
@@ -57,22 +66,50 @@ class SqlExecutionImpl(SqlExecution):
         self.db_sec = get_gpg_decrypt(self.sec_str, self.salt)
         self.logger_main = None
         self.errorHandler = None
+        self.logger_sql = None
 
     def setLog(self, logger_main, errorHandler):
         self.logger_main = logger_main
         self.errorHandler = errorHandler
 
+    def getLogFilePath(self):
+        log_path = Path(self.log_path)
+        sql_file = Path(self.sql_file)
+
+        # 取得 sql 檔名（不含副檔名）
+        filename = sql_file.stem  # create_01
+
+        # 日期
+        today = datetime.today().strftime("%Y%m%d")
+
+        # 取得 sql 檔所在的子目錄名稱 (ddl)
+        subdir = sql_file.parent.name
+
+        # 建立 log 完整路徑
+        log_dir = log_path / "sql" / subdir
+        log_name = f"{filename}_{today}"
+
+        # 確保目錄存在
+        #log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir, log_name
 
     def run(self):
-        self.logger_main.info(f"SQL file = {self.sql_file}")
-        self.logger_main.info(f"SQL args = {self.args_str}")
 
-        #Read SQL file to SQL string
+        #Create module log
+        log_dir,log_name = self.getLogFilePath()
+        Logger.Logger(log_dir, log_name)  # 模組日誌
+        self.logger_sql = logging.getLogger(log_name)
+
+        self.logger_sql.info("Run SQL Execution")
+
+        # Read SQL file to SQL string
+        self.logger_sql.info(f"SQL file = {self.sql_file}")
+        self.logger_sql.info(f"SQL args = {self.args_str}")
         try:
             with open(self.sql_file, "r") as file:
                 sql_str = file.read()
         except Exception as e:  # Catching a more general exception for demonstration
-            self.logger_main.error(f"讀取SQL file錯誤: {e}")
+            self.logger_sql.error(f"讀取SQL file錯誤: {e}")
             self.errorHandler.exceptionWriter(f"[讀取SQL file錯誤] {e}")
             exit(1)
 
@@ -85,7 +122,7 @@ class SqlExecutionImpl(SqlExecution):
                 sql_str = sql_str.replace(key, value)
 
         #print("SQL scripts: ", sql_str)
-        self.logger_main.info(f'SQL scripts: \n{sql_str}')
+        self.logger_sql.info(f'SQL scripts: \n{sql_str}')
 
         #Connect DB and execute SQL
         if(self.driver == 'hive2'):
@@ -101,17 +138,17 @@ class SqlExecutionImpl(SqlExecution):
 
         try:
             dao.connect()
-            self.logger_main.info('資料庫連線完成')
+            self.logger_sql.info('資料庫連線完成')
         except Exception as e:
-            self.logger_main.error(f'資料庫連線失敗 {e}')
+            self.logger_sql.error(f'資料庫連線失敗 {e}')
             self.errorHandler.exceptionWriter(f"[連線資料庫錯誤] {e}")
             exit(1)
 
         try:
             dao.executeSql(sql_str)
-            self.logger_main.info('執行SQL完成')
+            self.logger_sql.info('執行SQL完成')
         except Exception as e:
-            self.logger_main.error(f'執行SQL錯誤 {e}')
+            self.logger_sql.error(f'執行SQL錯誤 {e}')
             self.errorHandler.exceptionWriter(f"[執行SQL錯誤] {e}")
             exit(1)
 
