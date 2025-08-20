@@ -14,17 +14,18 @@ Modify          :
 '''
 
 import abc
+from typing import List
 
+# ========== 抽象介面 ==========
 class FileDao(abc.ABC):
+    @abc.abstractmethod
+    def listFiles(self, pattern: str) -> List[str]:
+        pass
 
-    def __init__(self):
-        '''
-        Initialize the Ffile connection
-        '''
-        return NotImplemented
+    @abc.abstractmethod
+    def downloadFile(self, remote_path: str, local_path: str) -> None:
+        pass
 
-    def downloadFiles(self, source_path, file_list):
-        return NotImplemented
-
-    def uploadFiles(self, target_path, file_list):
-        return NotImplemented
+    @abc.abstractmethod
+    def uploadFile(self, local_path: str, remote_path: str) -> None:
+        pass
