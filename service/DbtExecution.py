@@ -24,7 +24,7 @@ class DbtExecution(abc.ABC):
 
 
     @abc.abstractmethod
-    def __init__(self, config, args):
+    def __init__(self, main_config, config, args):
         return NotImplemented
 
     '''

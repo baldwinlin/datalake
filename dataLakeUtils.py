@@ -30,6 +30,7 @@ from service.impl.FtpLoaderImpl import *
 from service.impl.SqlExecutionImpl  import *
 import json
 from service.impl.DbtExecutionImpl import *
+from service.impl.AirbyteExecutionImpl import *
 import logging
 from logger import Logger
 from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
@@ -69,14 +70,32 @@ def run(fun, main_config, config, fc_args, sql_file):
     elif(fun == 'DBT'):
         logger_main.info("Run DBT Execution")
         try:
-            dbt_execution = DbtExecutionImpl(config, fc_args)
+            dbt_execution = DbtExecutionImpl(main_config, config, fc_args)
         except Exception as e:
             logger_main.error(f"建立DbtExecutionImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"建立DbtExecutionImpl錯誤 {e}")
             exit(1)
-        dbt_execution.setLog(logger_main, errorHandler)
-        if(dbt_execution.run()):
+        # dbt_execution.setLog(logger_main, errorHandler)
+        result = dbt_execution.run()
+        if result == True:
             logger_main.info("Run DBT Execution success")
+        elif result == False:
+            logger_main.error("Run DBT Execution failed")
+
+    elif(fun == 'AIB'):
+        logger_main.info("Run Airbyte Execution")
+        try:
+            airbyte_execution = AirbyteExecutionImpl(main_config, config, fc_args)
+        except Exception as e:
+            logger_main.error(f"建立AirbyteExecutionImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"建立AirbyteExecutionImpl錯誤 {e}")
+            exit(1)
+        # airbyte_execution.setLog(logger_main, errorHandler)
+        result = airbyte_execution.run()
+        if result == True:
+            logger_main.info("Run Airbyte Execution success")
+        elif result == False:
+            logger_main.error("Run Airbyte Execution failed")
 
     else:
         print("No such function")

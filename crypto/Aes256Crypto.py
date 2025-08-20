@@ -59,11 +59,11 @@ def readSaltFile(salt_file):
         raise Exception(f"讀取salt檔錯誤: {e}")
     return salt
 
-def get_gpg_decrypt(key, salt):
-    if (key is None) or (salt is None):
-        raise Exception(f"gpg_decrypt error (key: {key}, salt: {salt})")
+def get_gpg_decrypt(sec, salt):
+    if (sec is None) or (salt is None):
+        raise Exception(f"gpg_decrypt error (sec: {sec}, salt: {salt})")
     gpg = gnupg.GPG()
-    enc_raw = gpg.decrypt(base64.b64decode(key.strip()), passphrase=salt).data.decode()
+    enc_raw = gpg.decrypt(base64.b64decode(sec.strip()), passphrase=salt).data.decode()
 
     return enc_raw
 
