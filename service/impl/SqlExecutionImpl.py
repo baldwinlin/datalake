@@ -125,7 +125,7 @@ class SqlExecutionImpl(SqlExecution):
         Logger.Logger(log_dir, log_name)  # 模組日誌
         self.logger_sql = logging.getLogger(log_name)
 
-        self.logger_sql.info("Run SQL Execution")
+        self.logger_sql.info("[Run SQL Execution]")
 
         # Read SQL file to SQL string
         self.logger_sql.info(f"SQL file = {self.sql_file}")
@@ -134,7 +134,7 @@ class SqlExecutionImpl(SqlExecution):
             with open(self.sql_file, "r") as file:
                 sql_str = file.read()
         except Exception as e:  # Catching a more general exception for demonstration
-            self.logger_sql.error(f"讀取SQL file錯誤: {e}")
+            self.logger_sql.error(f"[讀取SQL file錯誤] {e}")
             self.errorHandler.exceptionWriter(f"[讀取SQL file錯誤] {e}")
             exit(1)
 
@@ -170,6 +170,10 @@ class SqlExecutionImpl(SqlExecution):
         if(process.returncode):
             self.logger_sql.error(f"[執行SQL錯誤] {process.stderr}")
             exit(1)
+        else:
+            self.logger_sql.info(f"[執行SQL完成]")
+
+        return True
 '''       
 
         #Connect DB and execute SQL
