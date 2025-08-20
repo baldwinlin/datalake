@@ -47,6 +47,9 @@ class AirbyteExecutionImpl(AirbyteExecution):
 
         args = json.loads(args)
         self.connection_name = str(args["connection_name"])
+        self.poll_sec = int(args.get("poll_sec"))
+        self.timeout_sec = int(args.get("timeout_sec"))
+
         self.connection_id = None
         self.source_id = None
         self.destination_id = None
@@ -330,7 +333,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
         if job_id is None:
             return None
 
-    def waitSync(self, poll_sec: int = 20, timeout_sec: int = 1800):
+    def waitSync(self):
         # 等待同步完成
         start = time.time()
         last_status = None
@@ -339,7 +342,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
         while True:
             elapsed = time.time() - start
             self.logger_main.info(f"等待同步完成，已經等待了 {elapsed} 秒...")
-            if elapsed > timeout_sec:
+            if elapsed > self.timeout_sec:
                 return "timeout"
             
             # 取得最新的 job 狀態
@@ -378,7 +381,4 @@ class AirbyteExecutionImpl(AirbyteExecution):
             # 處理進行中的狀態
             if job_status in ["pending", "running"]:
                 self.logger_main.info(f"同步狀態: {job_status}...")
-                time.sleep(poll_sec)
-            
-            
-
+                time.sleep(self.poll_sec)
