@@ -1,0 +1,13 @@
+mac/linus 執行指令：
+python dataLakeUtils.py -fun FL --mc ./conf/main.conf -fc ./conf/ftpload.conf --args {\"date\":\"20250811\"}
+python dataLakeUtils.py -fun SQL --mc ./conf/main.conf -fc ./conf/sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
+python dataLakeUtils.py -fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
+python dataLakeUtils.py -fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
+python dataLakeUtils.py --fun AIB --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args "{\"connection_name\":\"DW_to_HADP\",\"poll_sec\":20,\"timeout_sec\":1800}"
+
+windows 執行指令：
+python dataLakeUtils.py -fun FL --mc .\conf\main.conf -fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
+python dataLakeUtils.py -fun SQL --mc .\conf\main.conf -fc .\conf\sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
+python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"uat\",\"debug\":\"--debug\"}"
+python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"prod\",\"debug\":\"--debug\"}"
+python dataLakeUtils.py --fun AIB --mc ".\conf\main.conf" --fc ".\conf\airbyte.conf" --args "{\"connection_name\":\"DW_to_HADP\",\"poll_sec\":20,\"timeout_sec\":1800}"
