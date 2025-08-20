@@ -62,6 +62,7 @@ def readSaltFile(salt_file):
 def get_gpg_decrypt(sec, salt):
     if (sec is None) or (salt is None):
         raise Exception(f"gpg_decrypt error (sec: {sec}, salt: {salt})")
+
     gpg = gnupg.GPG()
     enc_raw = gpg.decrypt(base64.b64decode(sec.strip()), passphrase=salt).data.decode()
 
