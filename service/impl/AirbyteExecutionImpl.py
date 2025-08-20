@@ -13,6 +13,7 @@ Output          :
 Modify          :
 '''
 from service.AirbyteExecution import *
+from crypto.Aes256Crypto import *
 
 
 import logging
@@ -28,10 +29,21 @@ class AirbyteExecutionImpl(AirbyteExecution):
     def __init__(self, main_config, config, args):
         # config 是從 airbyte.conf 來的配置
         self.config = config
-        self.client_id = config['AIRBYTE']['CLIENT_ID']
-        self.client_secret = config['AIRBYTE']['CLIENT_SECRET']
         self.workspace_ids = config['AIRBYTE']['WORKSPACE_IDS']
         self.airbyte_root_api = config['AIRBYTE']['AIRBYTE_ROOT_API']
+        
+        #測試環境 正式執行時需要註解掉
+        self.user = config['AIRBYTE']['CLIENT_ID']
+        self.db_sec = config['AIRBYTE']['CLIENT_SECRET']
+
+        self.sec_file = self.config.get('AIRBYTE','SEC_FILE')
+        self.key_file = self.config.get('AIRBYTE','KEY_FILE')
+        #正式環境 正式執行需解開註解
+        # self.user, self.sec_str = readSecFile(self.sec_file)
+        # self.salt = readSaltFile(self.key_file)
+        # self.db_sec = get_gpg_decrypt(self.sec_str, self.salt)
+
+
 
         args = json.loads(args)
         self.connection_name = str(args["connection_name"])
@@ -42,8 +54,6 @@ class AirbyteExecutionImpl(AirbyteExecution):
         self.source_name = None
         self.destination_name = None
         self.job_id = None
-
-
 
 
         # 初始化 logger 變數
@@ -176,7 +186,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
             "accept": "application/json",
             "content-type": "application/json"
         }
-        payload = {"client_id": self.client_id, "client_secret": self.client_secret}
+        payload = {"client_id": self.user, "client_secret": self.db_sec}
         response = requests.post(url=access_token_api, json=payload, headers=headers, timeout=20)
         try:
             response.raise_for_status()
