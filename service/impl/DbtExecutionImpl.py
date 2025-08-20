@@ -15,25 +15,19 @@ Modify          :
 from service.DbtExecution import *
 import subprocess
 from pathlib import Path
-import sys
 
 import logging
 from logger import Logger
-from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
-import configparser
+# from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
 import json
 
 
 
 class DbtExecutionImpl(DbtExecution):
-    def __init__(self, config, args):
+    def __init__(self, main_config, config, args):
         # config 是從 dbt.conf 來的配置
-        # 我們需要額外傳入 main_config 來取得日誌配置
         self.config = config
         args = json.loads(args)
-        # 如果 args 是字串，則解析為字典
-        
-        
         # 從 dbt.conf 讀取 shell 配置
         self.shellBase = config['SHELL']['SHELL_BASE']
         
@@ -45,15 +39,27 @@ class DbtExecutionImpl(DbtExecution):
         self.debugMode = args.get('debug')
 
         # 初始化 logger 變數
+        self.main_config = main_config
         self.logger_main = None
-        self.errorHandler = None
+        # self.errorHandler = None
 
-    def setLog(self, logger_main, errorHandler):
-        self.logger_main = logger_main
-        self.errorHandler = errorHandler
+    def _initialize_logger(self):
+        # 讀取日誌配置，優先使用 main_config，否則從 main.conf 讀取
+        log_config = self.main_config
+        dbt_log_path = f"{log_config['LOG']['LOG_PATH']}/dbt"
+
+        # 創建兩個 Logger 實例
+        Logger.Logger(dbt_log_path, "dbt_main") # 主要日誌
+        # Logger.Logger(dbt_log_path, "dbt_error_handler") # 錯誤日誌
+
+        # 更新 DbtExecution 的 logger_main 和 errorHandler attribute
+        self.logger_main = logging.getLogger('dbt_main') # 取得主要 logger 實例
+        # self.errorHandler = dataLakeUtilsErrorHandler('dbt_error_handler') # 取得錯誤處理器實例
+
 
     def run(self):
-        
+
+        self._initialize_logger()  # 初始化 logger
         try:
             # 檢查必要參數
             if not self._validate_parameters():
@@ -72,24 +78,19 @@ class DbtExecutionImpl(DbtExecution):
             success = self.connectShell(shell_args)
             if success:
                 self.logger_main.info("DBT 執行完成.")
+                return True
             else:
                 self.logger_main.error("DBT 執行失敗.")
-                self.errorHandler.exceptionWriter("DBT 執行失敗.")
-            return success
+                return False
 
         except Exception as e:
-            if self.errorHandler:
-                self.logger_main.error(f"執行過程中發生例外: {str(e)}")
-                self.errorHandler.exceptionWriter(f"執行過程中發生例外: {str(e)}")
-            else:
-                print(f"執行過程中發生例外: {str(e)}")
+            self.logger_main.error(f"執行過程中發生例外: {str(e)}")
             return False
 
     def _validate_parameters(self):
         # 檢查必要參數是否存在
         if not self.command or not self.script or not self.batch_date:
             self.logger_main.error("必要參數缺失: command, script, batch_date 必須提供。")
-            self.errorHandler.exceptionWriter("必要參數缺失: command, script, batch_date 必須提供。")
             return False
         
         """檢查 script 路徑是否存在
@@ -100,26 +101,23 @@ class DbtExecutionImpl(DbtExecution):
         # 檢查檔案是否存在
         script_path = Path(script_path)
         if not script_path.is_file():  # ← 使用 Path.is_file() 檢查檔案存在性
-            self.errorHandler.exceptionWriter(f"無效的 script 路徑: {script_path}。請確保檔案存在。")
+            self.logger_main.error(f"無效的 script 路徑: {script_path}。請確保檔案存在。")
             return False
         """
 
         # 檢查 batch_date 格式
         if not isinstance(self.batch_date, str) or len(self.batch_date) != 8 or not self.batch_date.isdigit():
             self.logger_main.error("batch_date 必須是一個 8 位數字字符串，格式為 YYYYMMDD。")
-            self.errorHandler.exceptionWriter("batch_date 必須是一個 8 位數字字符串，格式為 YYYYMMDD。")
             return False
         
         # 檢查 command 是否在允許的範圍內
         if self.command not in ["build", "build_upstream", "run", "run_upstream", "test", "snapshot", "snapshot_upstream", "docs"]:
             self.logger_main.error(f"無效的 command: {self.command}. 允許的值為 'build', 'build_upstream', 'run', 'run_upstream', 'test', 'snapshot', 'snapshot_upstream', 'docs'.")
-            self.errorHandler.exceptionWriter(f"無效的 command: {self.command}. 允許的值為 'build', 'build_upstream', 'run', 'run_upstream', 'test', 'snapshot', 'snapshot_upstream', 'docs'.")
             return False
         
         # 檢查 env 是否在允許的範圍內
         if self.env and self.env not in ["dev", "sit", "uat", "prod"]:
             self.logger_main.error(f"無效的環境變數: {self.env}. 允許的值為 'dev', 'sit', 'uat', 'prod'.")
-            self.errorHandler.exceptionWriter(f"無效的環境變數: {self.env}. 允許的值為 'dev', 'sit', 'uat', 'prod'.")
             return False
         return True
 
