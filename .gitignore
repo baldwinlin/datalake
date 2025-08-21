@@ -22,3 +22,5 @@ logs/**/*
 !logs/**/
 
 mock_execution
+
+downloads/

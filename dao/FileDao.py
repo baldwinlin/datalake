@@ -18,14 +18,23 @@ from typing import List
 
 # ========== 抽象介面 ==========
 class FileDao(abc.ABC):
+
     @abc.abstractmethod
-    def listFiles(self, pattern: str) -> List[str]:
+    def connect(self):
+        pass
+    
+    @abc.abstractmethod
+    def listFiles(self) -> List[str]:
         pass
 
     @abc.abstractmethod
-    def downloadFile(self, remote_path: str, local_path: str) -> None:
+    def downloadFile(self, name, size) -> None:
         pass
 
     @abc.abstractmethod
     def uploadFile(self, local_path: str, remote_path: str) -> None:
+        pass
+
+    @abc.abstractmethod
+    def close(self):
         pass
