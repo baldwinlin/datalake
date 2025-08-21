@@ -25,9 +25,9 @@ import abc
 class FtpLoader(abc.ABC):
 
 
-    @abc.abstractmethod
-    def __init__(self):
-        return NotImplemented
+    # @abc.abstractmethod
+    # def __init__(self):
+    #     return NotImplemented
 
     '''
         FTP Loader main flow
@@ -41,7 +41,7 @@ class FtpLoader(abc.ABC):
         return: ftp connection object.
     '''
     @abc.abstractmethod
-    def getFtpConnection(self, ftp_config):
+    def getFtpConnection(self):
         return NotImplemented
 
     '''
@@ -50,14 +50,14 @@ class FtpLoader(abc.ABC):
         return: ftp_file_list
     '''
     @abc.abstractmethod
-    def getFtpFileList(self, ftp_path, name_pattern, date_string):
+    def getFtpFileList(self):
         return NotImplemented
 
     '''
         @work_path: read from config file
     '''
     @abc.abstractmethod
-    def downloadFtpFile(self, ftp_connection, ftp_file_list, work_path):
+    def downloadFtpFile(self, name, size):
         return NotImplemented
 
     '''
@@ -86,4 +86,9 @@ class FtpLoader(abc.ABC):
     '''
     @abc.abstractmethod
     def writeToS3(self, ftp_file_list, object_store_path, access_id, access_key):
+        return NotImplemented
+
+
+    @abc.abstractmethod
+    def close(self):
         return NotImplemented

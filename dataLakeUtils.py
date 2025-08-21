@@ -6,17 +6,16 @@ Object          : The main function of XUtil process.
                          FL - Ftp loader
                          FW - Ftp writter
                          SQL - SQL execution
-                  Ex: python dataLakeUtils.py -fun FL --mc .\conf\main.conf -fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
                   mac/linus 執行指令：
-                  python dataLakeUtils.py -fun FL --mc ./conf/main.conf -fc ./conf/ftpload.conf --args {\"date\":\"20250811\"}
-                  python dataLakeUtils.py -fun SQL --mc ./conf/main.conf -fc ./conf/sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
-                  python dataLakeUtils.py -fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
-                  python dataLakeUtils.py -fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
+                  python dataLakeUtils.py --fun FL --mc ./conf/main.conf --fc ./conf/ftpload.conf --args {\"date\":\"20250811\"}
+                  python dataLakeUtils.py --fun SQL --mc ./conf/main.conf --fc ./conf/sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
+                  python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
+                  python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
                   python dataLakeUtils.py --fun AIB --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args "{\"connection_name\":\"DW_to_HADP\",\"poll_sec\":20,\"timeout_sec\":1800}"
 
                   windows 執行指令：
-                  python dataLakeUtils.py -fun FL --mc .\conf\main.conf -fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
-                  python dataLakeUtils.py -fun SQL --mc .\conf\main.conf -fc .\conf\sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
+                  python dataLakeUtils.py --fun FL --mc .\conf\main.conf --fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
+                  python dataLakeUtils.py --fun SQL --mc .\conf\main.conf --fc .\conf\sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
                   python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"uat\",\"debug\":\"--debug\"}"
                   python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"prod\",\"debug\":\"--debug\"}"
                   python dataLakeUtils.py --fun AIB --mc ".\conf\main.conf" --fc ".\conf\airbyte.conf" --args "{\"connection_name\":\"DW_to_HADP\",\"poll_sec\":20,\"timeout_sec\":1800}"
@@ -32,15 +31,19 @@ Output          :
 ********************************************************************************
 Modify          :
 '''
-import sys
 import os
+import json
 import configparser
 import argparse
 from service.impl.FtpLoaderImpl import *
 from service.impl.SqlExecutionImpl  import *
-import json
 from service.impl.DbtExecutionImpl import *
 from service.impl.AirbyteExecutionImpl import *
+
+
+from dao.DaoFactory import FileDAOFactory
+from service.ServiceFactory import ServiceFactory
+
 import logging
 from logger import Logger
 from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
@@ -57,8 +60,12 @@ def run(fun, main_config, config, fc_args, sql_file):
     print("")
     if(fun == 'FL'):
         print("Run FTP Loader")
-        ftp_loader = FtpLoaderImpl(config, fc_args)
-        ftp_loader.run()
+        fc_args = json.loads(fc_args)
+
+        dao = FileDAOFactory.create_dao(config, fc_args)
+        service = ServiceFactory.create_ftp_loader(dao)  # 使用工廠模式獲取 dao 實例
+        service.run()
+
 
     elif(fun == 'FW'):
         print("Run FTP Writer")
