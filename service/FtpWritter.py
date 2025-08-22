@@ -40,33 +40,3 @@ class FtpWritter(abc.ABC):
         return NotImplemented
 
 
-    '''
-        @ftp_confif_file: from command argument
-        return: ftp_file_name
-    '''
-    @abc.abstractmethod
-    def getFileFromHive(self, ftp_confif_file):
-        return NotImplemented
-
-    '''
-        @ftp_confif_file: from command argument
-        @ftp_file_name: the file from Hive or S3
-    '''
-    @abc.abstractmethod
-    def writeToFtp(self, htp_config_file, ftp_file_name):
-        return NotImplemented
-
-    '''
-        Use boto3 module, to be confirmed.
-    '''
-    @abc.abstractmethod
-    def getS3File(self):
-        return NotImplemented
-
-    '''
-        Use boto3 module, to be confirmed.
-        @object_store_path/@access_id/@access_key: get form FTP config file
-    '''
-    @abc.abstractmethod
-    def writeToS3(self, ftp_file_list, object_store_path, access_id, access_key):
-        return NotImplemented

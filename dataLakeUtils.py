@@ -38,6 +38,7 @@ import json
 import configparser
 import argparse
 from service.impl.FtpLoaderImpl import *
+from service.impl.FtpWritterImpl import *
 from service.impl.SqlExecutionImpl  import *
 from service.impl.DbtExecutionImpl import *
 from service.impl.AirbyteExecutionImpl import *
@@ -71,11 +72,19 @@ def run(fun, main_config, config, fc_args, sql_file):
 
 
     elif(fun == 'FW'):
-        print("Run FTP Writer")
+        logger_main.info("Run FTP Writter")
+        try:
+            ftp_writter = FtpWritterImpl(main_config, config, fc_args, sql_file)
+        except Exception as e:
+            logger_main.error(f"FtpLoaderImpl {e}")
+            errorHandler.exceptionWriter(f"FtpLoaderImpl {e}")
+            exit(1)
+
+        if (ftp_writter.run()):
+            logger_main.info("Run FTP writter success")
 
     elif(fun == 'SQL'):
         logger_main.info("Run SQL Exception")
-        print("Run SQL Execution")
         try:
             sql_execution = SqlExecutionImpl(main_config, config, fc_args, sql_file)
         except Exception as e:
