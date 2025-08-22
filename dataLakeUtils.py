@@ -12,6 +12,7 @@ Object          : The main function of XUtil process.
                   python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
                   python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
                   python dataLakeUtils.py --fun AIB --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args "{\"connection_name\":\"DW_to_HADP\",\"poll_sec\":20,\"timeout_sec\":1800}"
+                  python dataLakeUtils.py --fun AIC --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args "{\"job_id\":12345,\"poll_sec\":20,\"timeout_sec\":1800}"
 
                   windows 執行指令：
                   python dataLakeUtils.py --fun FL --mc .\conf\main.conf --fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
@@ -19,6 +20,7 @@ Object          : The main function of XUtil process.
                   python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"uat\",\"debug\":\"--debug\"}"
                   python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"prod\",\"debug\":\"--debug\"}"
                   python dataLakeUtils.py --fun AIB --mc ".\conf\main.conf" --fc ".\conf\airbyte.conf" --args "{\"connection_name\":\"DW_to_HADP\",\"poll_sec\":20,\"timeout_sec\":1800}"
+                  python dataLakeUtils.py --fun AIC --mc ".\conf\main.conf" --fc ".\conf\airbyte.conf" --args "{\"job_id\":12345,\"poll_sec\":20,\"timeout_sec\":1800}"
 
 
 Author          :
@@ -39,10 +41,13 @@ from service.impl.FtpLoaderImpl import *
 from service.impl.SqlExecutionImpl  import *
 from service.impl.DbtExecutionImpl import *
 from service.impl.AirbyteExecutionImpl import *
+from service.impl.AirbyteCancelForced import *
 
+# from dao.impl.FtpDaoImpl import FtpDaoImpl
+# from dao.DaoFactory import FileDAOFactory
+# from service.ServiceFactory import ServiceFactory
 
-from dao.DaoFactory import FileDAOFactory
-from service.ServiceFactory import ServiceFactory
+from service.FtpLoader import FtpLoader
 
 import logging
 from logger import Logger
@@ -61,9 +66,7 @@ def run(fun, main_config, config, fc_args, sql_file):
     if(fun == 'FL'):
         print("Run FTP Loader")
         fc_args = json.loads(fc_args)
-
-        dao = FileDAOFactory.create_dao(config, fc_args)
-        service = ServiceFactory.create_ftp_loader(dao)  # 使用工廠模式獲取 dao 實例
+        service = FtpLoaderImpl(config, fc_args)
         service.run()
 
 
@@ -114,6 +117,19 @@ def run(fun, main_config, config, fc_args, sql_file):
         elif result == False:
             logger_main.error("Run Airbyte Execution failed")
 
+    elif(fun == 'AIC'):
+        logger_main.info("Run Airbyte Cancel Forced")
+        try:
+            airbyte_cancel = AirbyteCancelForcedImpl(main_config, config, fc_args)
+        except Exception as e:
+            logger_main.error(f"建立AirbyteCancelForcedImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"建立AirbyteCancelForcedImpl錯誤 {e}")
+            exit(1)
+        result = airbyte_cancel.run()
+        if result == True:
+            logger_main.info("Run Airbyte Cancel Forced success")
+        elif result == False:
+            logger_main.error("Run Airbyte Cancel Forced failed")
     else:
         print("No such function")
         exit(1)
