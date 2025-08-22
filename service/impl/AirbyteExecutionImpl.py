@@ -24,6 +24,9 @@ import time
 import requests
 import json
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 class AirbyteExecutionImpl(AirbyteExecution):
     def __init__(self, main_config, config, args):
@@ -33,16 +36,15 @@ class AirbyteExecutionImpl(AirbyteExecution):
         self.airbyte_root_api = config['AIRBYTE']['AIRBYTE_ROOT_API']
         
         #測試環境 正式執行時需要註解掉
-        self.user = config['AIRBYTE']['CLIENT_ID']
-        self.db_sec = config['AIRBYTE']['CLIENT_SECRET']
+        # self.user = config['AIRBYTE']['CLIENT_ID']
+        # self.db_sec = config['AIRBYTE']['CLIENT_SECRET']
 
         self.sec_file = self.config.get('AIRBYTE','SEC_FILE')
         self.key_file = self.config.get('AIRBYTE','KEY_FILE')
         #正式環境 正式執行需解開註解
-        # self.user, self.sec_str = readSecFile(self.sec_file)
-        # self.salt = readSaltFile(self.key_file)
-        # self.db_sec = get_gpg_decrypt(self.sec_str, self.salt)
-
+        self.user, self.sec_str = readSecFile(self.sec_file)
+        self.salt = readSaltFile(self.key_file)
+        self.db_sec = get_gpg_decrypt(self.sec_str, self.salt)
 
 
         args = json.loads(args)
@@ -163,11 +165,23 @@ class AirbyteExecutionImpl(AirbyteExecution):
             """
             step: 驗收監聽資料庫同步結果，遇到預期內錯誤或執行成功
             """
+            # if sync_status == "timeout":
+            #     self.logger_main.warning(f"等待同步超時: {self.connection_name}, job_id: {job_id}")
+            #     self.logger_main.warning(f"再次啟動監聽同步狀態: {self.connection_name}, job_id: {job_id}")
+            #     sync_status = self.waitSync()
+
+            if sync_status:
+                try:
+                    self.validate_sync_result()
+                except requests.exceptions.HTTPError as e:
+                    self.logger_main.error(e)
+                    return False
+                except Exception as e:
+                    self.logger_main.error(f"驗證同步結果失敗，非預期的錯誤: {e}")
+                    return False
+
             if sync_status is None:
                 self.logger_main.error(f"監聽同步狀態失敗: {self.connection_name}, 無法取得同步狀態")
-                return False
-            if sync_status == "timeout":
-                self.logger_main.error(f"等待同步超時: {self.connection_name}, job_id: {job_id}")
                 return False
             elif sync_status == "failed":
                 self.logger_main.error(f"同步失敗: {self.connection_name}, job_id: {job_id}")
@@ -190,7 +204,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
             "content-type": "application/json"
         }
         payload = {"client_id": self.user, "client_secret": self.db_sec}
-        response = requests.post(url=access_token_api, json=payload, headers=headers, timeout=20)
+        response = requests.post(url=access_token_api, json=payload, headers=headers, timeout=20, verify=False)
         try:
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
@@ -201,42 +215,55 @@ class AirbyteExecutionImpl(AirbyteExecution):
         return token
 
     def getConnectionId(self):
-        list_connections_api = f"{self.airbyte_root_api}/connections?workspaceIds={self.workspace_ids}"
+        offset = 0
+        limit = 50
+        list_connections_api = f"{self.airbyte_root_api}/connections?workspaceIds={self.workspace_ids}&offset={offset}&limit={limit}"
         headers = {
             "accept": "application/json",
             "authorization": f"Bearer {self.getAccessToken()}"
-        }
-        
+        }        
         self.logger_main.info(f"嘗試抓取 {self.connection_name} 對應的 connectionId....先取得 workspace 內的連線列表")
-        response = requests.get(url=list_connections_api, headers=headers, timeout=20)
-        
-        try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
-            raise requests.exceptions.HTTPError(f"取得 connectionId 遇到 HTTP 錯誤，請檢查登入 airbyte 所需參數。[Airbyte]: {e}")
+        scanned = 0
+        available_names = []
 
-        connections = response.json().get("data", [])
-        self.logger_main.info(f"workspace 內擁有的連線數量: {len(connections)}")
+        while list_connections_api:
 
-        if not connections:
-            return None
+            response = requests.get(url=list_connections_api, headers=headers, timeout=20, verify= False)
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                raise requests.exceptions.HTTPError(f"取得 connectionId 遇到 HTTP 錯誤，請檢查登入 airbyte 所需參數。[Airbyte]: {e}")
+
+            connections = response.json().get("data", [])
+            scanned += len(connections)
+            self.logger_main.info(f"workspace 在本頁擁有的連線數量: {len(connections)}，累計掃描{scanned}個連線")
+
+            if not connections:
+                return None
     
-        # 使用 connection name 指定要執行的 connection
-        connection_info = [target for target in connections if target.get("name") == self.connection_name]
-        if connection_info:
-            self.connection_id = connection_info[0].get("connectionId")
-            self.connection_info = connection_info[0]
-            self.source_id = connection_info[0].get("sourceId")
-            self.destination_id = connection_info[0].get("destinationId")
-            target_id = self.connection_id
-            return  target_id
+            # 使用 connection name 指定要執行的 connection
+            for connection in connections:
+                name = connection.get("name")
+                if name:
+                    available_names.append(name)
+                if name == self.connection_name:
+                    self.connection_id = connection.get("connectionId")
+                    self.connection_info = connection
+                    self.source_id = connection.get("sourceId")
+                    self.destination_id = connection.get("destinationId")
+                    target_id = self.connection_id
+                    return target_id
 
-        else:
-            # 找不到對應的 connection Id, 請檢查配置或連線名稱
-            connection_names = [conn.get("name") for conn in connections]            
-            self.logger_main.warning(f"指定的 connection name 無 connectionId, 可用的 connection names，請選擇其中一個進行資料同步: {', '.join(connection_names)}")
-            self.connection_id = None
-            return None
+            # 如果找不到對應的 connection Id，則切換到下一頁
+            if len(connections) < limit:
+                break  # 沒有更多連線了，結束循環
+
+            offset += limit
+            list_connections_api = f"{self.airbyte_root_api}/connections?workspaceIds={self.workspace_ids}&offset={offset}&limit={limit}"
+            self.logger_main.info(f"尚未找到 {self.connection_name} 對應的 connectionId，切換到下一頁繼續找，offset={offset}, limit={limit}")
+
+        self.connection_id = None
+        return None
 
         # return self.connection_id
 
@@ -249,7 +276,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
         }
         
         self.logger_main.info(f"嘗試抓取 sourceId {self.source_id} 對應的 source_name....")
-        response = requests.get(url=get_source_api, headers=headers, timeout=30)
+        response = requests.get(url=get_source_api, headers=headers, timeout=30, verify=False)
         
         try:
             response.raise_for_status()
@@ -271,7 +298,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
             "authorization": f"Bearer {self.getAccessToken()}"
         }
         self.logger_main.info(f"嘗試抓取 destinationId {self.destination_id} 對應的 destination_name....")
-        response = requests.get(url=get_destination_api, headers=headers, timeout=30)
+        response = requests.get(url=get_destination_api, headers=headers, timeout=30, verify=False)
         try:
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
@@ -319,7 +346,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
             "authorization": f"Bearer {self.getAccessToken()}"
         }
         self.logger_main.info(f"開始觸發同步: {self.connection_name}")
-        response = requests.post(url=trigger_sync_api,headers=headers,json=payload, timeout=30)
+        response = requests.post(url=trigger_sync_api,headers=headers,json=payload, timeout=30, verify=False)
         
         try:
             response.raise_for_status()
@@ -337,14 +364,17 @@ class AirbyteExecutionImpl(AirbyteExecution):
         # 等待同步完成
         start = time.time()
         last_status = None
+
         # 在開始時取得一次 token
         token = self.getAccessToken()
+        
         while True:
             elapsed = time.time() - start
             self.logger_main.info(f"等待同步完成，已經等待了 {elapsed} 秒...")
             if elapsed > self.timeout_sec:
-                return "timeout"
-            
+                self.logger_main.warning(f"等待同步超時: {self.connection_name}, job_id: {self.job_id}，已經等待 {elapsed} 秒，超過設定的 timeout_sec {self.timeout_sec} 秒")
+                self.logger_main.warning(f"繼續監聽同步狀態，直到同步完成")
+
             # 取得最新的 job 狀態
             list_jobs_api = f"{self.airbyte_root_api}/jobs/{self.job_id}"
             headers = {
@@ -352,13 +382,14 @@ class AirbyteExecutionImpl(AirbyteExecution):
                 "authorization": f"Bearer {token}"
             }
             self.logger_main.info(f"正在檢查 job 狀態: {self.job_id}")
-            response = requests.get(url=list_jobs_api, headers=headers, timeout=20)
+            response = requests.get(url=list_jobs_api, headers=headers, timeout=20, verify=False)
+           
             # 如果 token 過期，嘗試刷新
             if response.status_code == 401:
                 self.logger_main.warning(f"Token 過期，刷新 token...")
                 new_token = self.getAccessToken()
                 headers["authorization"] = f"Bearer {new_token}"
-                response = requests.get(url=list_jobs_api, headers=headers, timeout=20)
+                response = requests.get(url=list_jobs_api, headers=headers, timeout=20, verify=False)
             
             try:
                 response.raise_for_status()
@@ -382,3 +413,20 @@ class AirbyteExecutionImpl(AirbyteExecution):
             if job_status in ["pending", "running"]:
                 self.logger_main.info(f"同步狀態: {job_status}...")
                 time.sleep(self.poll_sec)
+
+    def validate_sync_result(self):
+        result_api = f"{self.airbyte_root_api}/jobs/{self.job_id}"
+        headers = {
+            "accept": "application/json",
+            "authorization": f"Bearer {self.getAccessToken()}"
+        }
+
+        response = requests.get(url=result_api, headers=headers, timeout=20, verify=False)
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise requests.exceptions.HTTPError(f"獲取同步結果失敗遇到 HTTP 錯誤，請檢查 airbyte 連線參數 和 job_id 有效性， [Airbyte]: {e}")
+        
+        result_data = response.json()
+        self.logger_main.info(f"完整 Job Response: {json.dumps(result_data, indent=2)}")
+
