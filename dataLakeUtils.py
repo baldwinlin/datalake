@@ -44,9 +44,6 @@ from service.impl.DbtExecutionImpl import *
 from service.impl.AirbyteExecutionImpl import *
 from service.impl.AirbyteCancelForced import *
 
-# from dao.impl.FtpDaoImpl import FtpDaoImpl
-# from dao.DaoFactory import FileDAOFactory
-# from service.ServiceFactory import ServiceFactory
 
 from service.FtpLoader import FtpLoader
 
