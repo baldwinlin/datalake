@@ -20,7 +20,7 @@ from typing import List
 class FileDao(abc.ABC):
 
     @abc.abstractmethod
-    def connect(self):
+    def connect(self, ftp_type, host, port, user, password, timeout, passive):
         pass
     
     @abc.abstractmethod

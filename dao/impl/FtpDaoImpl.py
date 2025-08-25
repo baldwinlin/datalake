@@ -25,45 +25,40 @@ from stat import S_ISREG
 
 
 class FtpDaoImpl(FileDao):
-    def __init__(self, config, args):
-        self.config = config
-        """設定 FTP 和 SFTP 共有 attribution"""
-        self.host = config['FTP']['FTP_IP']
-        self.port = int(config['FTP']['FTP_PORT'])
-        self.user = config['FTP']['FTP_USER']
-        self.password = config['FTP']['FTP_PASSWORD']
-        self.ftp_type = config['FTP']['FTP_TYPE']
-        self.timeout = 30
-        self.passive = True
-
-        """僅保存狀態，不連線"""
+    def __init__(self, ftp_type, host, port, user, password, name_pattern, args):
+        #default 初始化連線物件
         self.FTP: Optional[FTP] = None
         self.SSH: Optional[paramiko.SSHClient] = None
         self.SFTP: Optional[paramiko.SFTPClient] = None
 
-        """FILE 相關參數"""
-        self.source_path = config['FILE']['SOURCE_PATH']
-        self.target_path = config['FILE']['TARGET_PATH']
-        self.name_pattern = config['FILE']['NAME_PATTERN']
+        #置換參數
+        self.date = str(args.get('date'))
 
-        """參數處理"""
-        date = str(args.get('date'))
-        self.target_files_pattern = self._process_name_pattern(date)
+        # 連線到 FTP/SFTP 伺服器
+        self.ftp_type = ftp_type
+        self.host = host
+        self.port = port
+        self.user = user
+        self.password = password
+        self.name_pattern = name_pattern
+        self.timeout = 30
+        self.passive = True
+        self.connect(ftp_type=ftp_type, host=host, port=port, user=user, password=password, timeout=self.timeout, passive=self.passive)
 
-    def connect(self):
-        if self.ftp_type == "FTP":
+    def connect(self, ftp_type, host, port, user, password, timeout, passive):
+        if ftp_type == "FTP":
             ftp = FTP()
-            ftp.connect(self.host, self.port, self.timeout)
-            ftp.login(self.user, self.password)
-            ftp.set_pasv(self.passive)
+            ftp.connect(host, port, timeout)
+            ftp.login(user, password)
+            ftp.set_pasv(passive)
             ftp.voidcmd("TYPE I")  # 確保使用二進位模式
             self.FTP = ftp  # 儲存 FTP 連線物件
         
-        elif self.ftp_type == "SFTP":
+        elif ftp_type == "SFTP":
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(self.host, port= self.port, username=self.user,
-                        password=self.password,timeout=self.timeout,
+            ssh.connect(host, port=port, username=user,
+                        password=password, timeout=timeout,
                         allow_agent=False, look_for_keys=False)
             self.SSH = ssh
             ssh.get_transport().set_keepalive(30)  # 設定 keepalive 以保持連線
@@ -71,14 +66,21 @@ class FtpDaoImpl(FileDao):
             sftp.chdir(sftp.normalize('.'))  # 進入 SFTP 根目錄
             self.SFTP = sftp  # 儲存 SFTP 連線物件
 
-    def _process_name_pattern(self, date):
+    # ListFiles 私有函式模組：_process_name_pattern 和 _match_name_pattern
+    def _process_name_pattern(self):
         """處理檔案名稱模式，替換單一參數日期變數"""
-        if self.name_pattern and date:
-            processed_name_pattern = self.name_pattern.replace("${date}", str(date))
+        if self.name_pattern and self.date:
+            processed_name_pattern = self.name_pattern.replace("${date}", str(self.date))
             return processed_name_pattern
-    
-    def listFiles(self) -> List[str]:   
 
+    def _match_name_pattern(self, name: str, target_name_pattern: str) -> bool:
+        """檢查檔案名稱是否符合指定的模式"""
+        result = fnmatch.fnmatch(name, target_name_pattern)
+        if result:
+            print(f"檔案 {name} 符合模式 {target_name_pattern}")
+        return result
+
+    def listFiles(self, source_path) -> List[str]:
         if self.ftp_type == "FTP":
             if not self.FTP:
                 raise Exception("FTP connection is not established. Call connect() first.")
@@ -86,64 +88,59 @@ class FtpDaoImpl(FileDao):
             if not self.SFTP:
                 raise Exception("SFTP connection is not established. Call connect() first.")
 
-        """列出符合名稱模式的檔案"""
+        """初始化列出符合名稱模式的檔案"""
+        target_name_pattern = self._process_name_pattern()
         files: List[Tuple[str, Optional[int]]] = []
         
+        """使用 FTP server 列出符合名稱模式的檔案，支援 MLSD 和 NLST 列舉檔案"""
         if self.ftp_type == "FTP":
             try: # 使用 MLSD 列出檔案
-                for name, facts in self.FTP.mlsd(self.source_path):
+                for file_name, facts in self.FTP.mlsd(source_path):
                     if facts.get("type") == "file":
-                        if self._match_name_pattern(name):
+                        if self._match_name_pattern(file_name, target_name_pattern):
                             size = int(facts.get("size", 0))
-                            files.append((name, size))
+                            files.append((file_name, size))
                 print(f"使用 MLSD 找到 {len(files)} 個檔案")
             except (error_perm, AttributeError): # 如果 MLSD 不可用，使用 nlst
                 print("MLSD 不可用，使用 nlst 列出檔案")
-                self.FTP.cwd(self.source_path) #切換路徑到來源資料夾，利於後續 size 可以直接使用 name 來 處理每個檔案的大小
-                for name in self.FTP.nlst():
-                    if self._match_name_pattern(name):
+                self.FTP.cwd(source_path) #切換路徑到來源資料夾，利於後續 size 可以直接使用 name 來 處理每個檔案的大小
+                for file_name in self.FTP.nlst():
+                    if self._match_name_pattern(file_name, target_name_pattern):
                         size = None
                         try:
-                            size = self.FTP.size(name)
+                            size = self.FTP.size(file_name)
                         except Exception:
                             pass # 測試是否需要切換到不同的 size 紀錄，還可以用 LIST 指令紀錄檔案資訊
-                        files.append((name, size))
+                        files.append((file_name, size))
                 print(f"使用 nlst 找到 {len(files)} 個檔案")
             return files
         
         elif self.ftp_type == "SFTP":
-            for file_info in self.SFTP.listdir_attr(self.source_path):
-                name = file_info.filename
+            for file_info in self.SFTP.listdir_attr(source_path):
+                file_name = file_info.filename
 
-                if name.startswith('.'): # 忽略隱藏檔案
+                if file_name.startswith('.'): # 忽略隱藏檔案
                     continue
                 if not S_ISREG(file_info.st_mode): # 忽略非一般檔案
                     continue
-                if self._match_name_pattern(name):
+                if self._match_name_pattern(file_name, target_name_pattern):
                     size = int(file_info.st_size) if file_info.st_size is not None else None
-                    files.append((name, size))
+                    files.append((file_name, size))
             return files
-    
-    def _match_name_pattern(self, name: str) -> bool:
-        """檢查檔案名稱是否符合指定的模式"""
-        result = fnmatch.fnmatch(name, self.target_files_pattern)
-        if result:
-            print(f"檔案 {name} 符合模式 {self.target_files_pattern}")
-        return result
 
-    def downloadFile(self, name, size) -> None:
+    def downloadFile(self, file_name, size, source_path, target_path) -> None:
         if self.ftp_type == "FTP":
             if not self.FTP:
                 raise Exception("FTP connection is not established. Call connect() first.")
         elif self.ftp_type == "SFTP":
             if not self.SFTP:
                 raise Exception("SFTP connection is not established. Call connect() first.")
-        if name is None:
+        if file_name is None:
             raise Exception("filename must be provided")
         
-        os.makedirs(self.target_path, exist_ok=True)
-        remote_path = f"{self.source_path.rstrip('/')}/{name}"
-        local_path = os.path.join(self.target_path, name)
+        os.makedirs(target_path, exist_ok=True)
+        remote_path = f"{source_path.rstrip('/')}/{file_name}"
+        local_path = os.path.join(target_path, file_name)
 
         """檢查本地端是否有檔案，並且記錄檔案大小"""
         exists_local_file: bool = os.path.exists(local_path)
@@ -156,12 +153,29 @@ class FtpDaoImpl(FileDao):
             print(f"本地檔案: {local_path}, 不存在，開始下載")
 
         """取得遠端檔案大小"""
-        remote_file_size = size
+        if size is None and self.ftp_type == "FTP":
+            self.FTP.voidcmd("TYPE I")  # 確保使用二進位模式
+            print(f"尚未取得遠端檔案大小，嘗試使用 SIZE 指令取得: {remote_path}")
+            try:
+                size = self.FTP.size(remote_path)
+                print(f"遠端檔案大小: {size} bytes")
+            except error_perm:
+                self.FTP.cwd(source_path) #切換路徑到來源資料夾，利於後續 size 可以直接使用 name 來 處理每個檔案的大小
+                size = self.FTP.size(file_name)
+                if size is None:
+                    raise Exception(f"無法取得遠端檔案大小: {remote_path}")
+        elif size is None and self.ftp_type == "SFTP":
+            print(f"尚未取得遠端檔案大小，嘗試使用 stat 指令取得: {remote_path}")
+            size = self.SFTP.stat(remote_path).st_size
+            if size is None:
+                raise Exception(f"無法取得遠端檔案大小: {remote_path}")
+        if size:
+            remote_file_size = size
 
         """檢查遠端檔案是否已經完整下載"""
         if exists_local_file and local_file_size == remote_file_size:
-            return f"File '{name}'已經完整下載過."
-        
+            return f"File '{file_name}'已經完整下載過."
+
         """如果沒有完整下載，則開始下載"""
         # 斷點續傳位置
         resume_pos = local_file_size if exists_local_file else 0
@@ -199,7 +213,7 @@ class FtpDaoImpl(FileDao):
         final_size = os.path.getsize(local_path)
         if  final_size != remote_file_size:
             raise IOError("下載大小不符")
-        return f"downloaded:{name}"
+        return f"downloaded:{file_name}"
 
     def uploadFile(self, local_path: str, remote_path: str) -> None:
         try:
