@@ -25,22 +25,22 @@ from stat import S_ISREG
 
 
 class FtpDaoImpl(FileDao):
-    def __init__(self, ftp_type, host, port, user, password, name_pattern, args):
+    def __init__(self, ftp_type, host, port, user, password):
         #default 初始化連線物件
         self.FTP: Optional[FTP] = None
         self.SSH: Optional[paramiko.SSHClient] = None
         self.SFTP: Optional[paramiko.SFTPClient] = None
 
-        #置換參數
-        self.date = str(args.get('date'))
-
+       
         # 連線到 FTP/SFTP 伺服器
         self.ftp_type = ftp_type
         self.host = host
         self.port = port
         self.user = user
         self.password = password
-        self.name_pattern = name_pattern
+
+
+
         self.timeout = 30
         self.passive = True
         self.connect(ftp_type=ftp_type, host=host, port=port, user=user, password=password, timeout=self.timeout, passive=self.passive)
@@ -67,10 +67,10 @@ class FtpDaoImpl(FileDao):
             self.SFTP = sftp  # 儲存 SFTP 連線物件
 
     # ListFiles 私有函式模組：_process_name_pattern 和 _match_name_pattern
-    def _process_name_pattern(self):
+    def _process_name_pattern(self, name_pattern, date):
         """處理檔案名稱模式，替換單一參數日期變數"""
-        if self.name_pattern and self.date:
-            processed_name_pattern = self.name_pattern.replace("${date}", str(self.date))
+        if name_pattern and date:
+            processed_name_pattern = name_pattern.replace("${date}", str(date))
             return processed_name_pattern
 
     def _match_name_pattern(self, name: str, target_name_pattern: str) -> bool:
@@ -80,7 +80,7 @@ class FtpDaoImpl(FileDao):
             print(f"檔案 {name} 符合模式 {target_name_pattern}")
         return result
 
-    def listFiles(self, source_path) -> List[str]:
+    def listFiles(self, source_path, name_pattern, date) -> List[str]:
         if self.ftp_type == "FTP":
             if not self.FTP:
                 raise Exception("FTP connection is not established. Call connect() first.")
@@ -89,7 +89,7 @@ class FtpDaoImpl(FileDao):
                 raise Exception("SFTP connection is not established. Call connect() first.")
 
         """初始化列出符合名稱模式的檔案"""
-        target_name_pattern = self._process_name_pattern()
+        target_name_pattern = self._process_name_pattern(name_pattern, date)
         files: List[Tuple[str, Optional[int]]] = []
         
         """使用 FTP server 列出符合名稱模式的檔案，支援 MLSD 和 NLST 列舉檔案"""

@@ -49,6 +49,12 @@ class AirbyteExecutionImpl(AirbyteExecution):
 
         args = json.loads(args)
         self.connection_name = str(args["connection_name"])
+
+        if not isinstance(args.get("poll_sec"), int):
+            raise ValueError("poll_sec 參數必須是整數")
+        if not isinstance(args.get("timeout_sec"), int):
+            raise ValueError("timeout_sec 參數必須是整數")
+
         self.poll_sec = int(args.get("poll_sec"))
         self.timeout_sec = int(args.get("timeout_sec"))
 

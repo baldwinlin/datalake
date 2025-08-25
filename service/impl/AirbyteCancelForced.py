@@ -77,7 +77,10 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
         try:
             # 直接取消指定的作業
             cancel_result = self.cancelJob(self.job_id)
-            
+            if cancel_result is False:
+                self.logger_main.error(f"取消作業 {self.job_id} 失敗")
+                return False
+
             # 等待取消完成
             final_status = self.waitForCancellation(self.job_id)
             if final_status is None:
@@ -115,6 +118,25 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
         return token
 
     def cancelJob(self, job_id):
+        """列出正在執行的 job_id """
+        get_job_api = f"{self.airbyte_root_api}/jobs/{self.job_id}"
+        headers = {
+            "accept": "application/json",
+            "authorization": f"Bearer {self.getAccessToken()}"
+        }
+        self.logger_main.info(f"正在檢查 job 狀態: {self.job_id}")
+        running_job_response = requests.get(url=get_job_api, headers=headers, timeout=20, verify=False)
+        
+        try:
+            running_job_response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise requests.exceptions.HTTPError(f"監聽失敗遇到 HTTP 錯誤，請檢查 airbyte 連線參數 和 job_id 有效性， [Airbyte]: {e}")
+
+        if running_job_response.json().get("status") not in ["pending", "running"]:
+            self.logger_main.warning(f"作業 {self.job_id} 當前狀態: {running_job_response.json().get('status')}，無法取消")
+            return False
+
+        
         """取消指定的作業"""
         cancel_job_api = f"{self.airbyte_root_api}/jobs/{job_id}"
         headers = {
