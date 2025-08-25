@@ -14,18 +14,41 @@ Modify          :
 '''
 
 from service.FtpLoader import *
-from dao.FileDao import FileDao  # 抽象
-# from dao.impl.FtpDaoImpl import FtpDaoImpl 
+from dao.impl.FtpDaoImpl import FtpDaoImpl  #FTP DAO 實現
+
+import paramiko
+from ftplib import FTP
+from typing import Optional
 
 
 
 class FtpLoaderImpl(FtpLoader):
-    def __init__(self, dao: FileDao):
-        self.ftp_dao = dao
-    
+    def __init__(self, config, args):
+        self.config = config
+        self.args = args
+
+        """設定 FTP 和 SFTP 共有 attribution"""
+        self.host = config['FTP']['FTP_IP']
+        self.port = int(config['FTP']['FTP_PORT'])
+        self.user = config['FTP']['FTP_USER']
+        self.password = config['FTP']['FTP_PASSWORD']
+        self.ftp_type = config['FTP']['FTP_TYPE']
+        """FILE 相關參數"""
+        self.source_path = config['FILE']['SOURCE_PATH']
+        self.target_path = config['FILE']['TARGET_PATH']
+        self.name_pattern = config['FILE']['NAME_PATTERN']
+        
+        self.ftp_dao = FtpDaoImpl(
+            ftp_type=self.ftp_type, 
+            host=self.host, 
+            port=self.port, 
+            user=self.user, 
+            password=self.password, 
+            name_pattern=self.name_pattern, 
+            args=args)
+
     def run(self):
         """ 執行連線 """
-        self.getFtpConnection()
         print("FTP/SFTP 連線已建立。")
 
         """列出的檔案"""
@@ -41,15 +64,12 @@ class FtpLoaderImpl(FtpLoader):
         self.close()
         print("FTP/SFTP 連線已關閉。")
         
-    def getFtpConnection(self):
-        self.ftp_dao.connect()
-
     def getFtpFileList(self):
-        files = self.ftp_dao.listFiles()
+        files = self.ftp_dao.listFiles(self.source_path)
         return files
 
     def downloadFtpFile(self, name, size):
-        downloaded = self.ftp_dao.downloadFile(name, size)
+        downloaded = self.ftp_dao.downloadFile(name, size, self.source_path, self.target_path)
         return downloaded
 
     '''

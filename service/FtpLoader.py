@@ -40,9 +40,9 @@ class FtpLoader(abc.ABC):
         @ftp_config: read from the ftp config file.
         return: ftp connection object.
     '''
-    @abc.abstractmethod
-    def getFtpConnection(self):
-        return NotImplemented
+    # @abc.abstractmethod
+    # def getFtpConnection(self):
+    #     return NotImplemented
 
     '''
         @ftp_path/name_pattern: read from the ftp config file.
