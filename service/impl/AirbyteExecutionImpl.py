@@ -165,11 +165,6 @@ class AirbyteExecutionImpl(AirbyteExecution):
             """
             step: 驗收監聽資料庫同步結果，遇到預期內錯誤或執行成功
             """
-            # if sync_status == "timeout":
-            #     self.logger_main.warning(f"等待同步超時: {self.connection_name}, job_id: {job_id}")
-            #     self.logger_main.warning(f"再次啟動監聽同步狀態: {self.connection_name}, job_id: {job_id}")
-            #     sync_status = self.waitSync()
-
             if sync_status:
                 try:
                     self.validate_sync_result()
@@ -429,4 +424,3 @@ class AirbyteExecutionImpl(AirbyteExecution):
         
         result_data = response.json()
         self.logger_main.info(f"完整 Job Response: {json.dumps(result_data, indent=2)}")
-

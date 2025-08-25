@@ -80,8 +80,10 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
             
             # 等待取消完成
             final_status = self.waitForCancellation(self.job_id)
-            
-            if final_status == "cancelled":
+            if final_status is None:
+                self.logger_main.error(f"無法取得作業 {self.job_id} 的最終狀態")
+                return False
+            elif final_status == "cancelled":
                 self.logger_main.info(f"作業 {self.job_id} 已成功取消")
                 return True
             else:
@@ -166,6 +168,10 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
                 raise requests.exceptions.HTTPError(f"檢查作業狀態失敗遇到 HTTP 錯誤，job_id: {job_id} [Airbyte]: {e}")
 
             job_status = response.json().get("status")
+
+            if job_status is None:
+                return None
+            
             if job_status != last_status:
                 self.logger_main.info(f"作業 {job_id} 狀態更新: {job_status}")
                 last_status = job_status
