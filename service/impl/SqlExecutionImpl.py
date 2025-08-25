@@ -118,6 +118,27 @@ class SqlExecutionImpl(SqlExecution):
         #log_dir.mkdir(parents=True, exist_ok=True)
         return log_dir, log_name
 
+    def executeBeeline(self, sql_temp_file):
+        cmd = f"cd {self.beeline_path}\n"
+        cmd += f"./beeline -u \"jdbc:hive2://{self.host}:{self.port}/default;auth=LDAP\" -n '{self.user}' -p '{self.db_sec}' -f {sql_temp_file}"
+        # print("cmd = ", cmd)
+        process = subprocess.run(
+            cmd,
+            shell=True,  # 允許 shell 指令
+            text=True,  # 以字串回傳，而不是 bytes
+            capture_output=True  # 抓 stdout/stderr
+        )
+        self.logger_sql.info(f"[執行SQL結果] {process.returncode}")
+        # print("Return code:", process.returncode)
+        # print("STDOUT:\n", process.stdout)
+        # print("STDERR:\n", process.stderr)
+        if (process.returncode):
+            self.logger_sql.error(f"[執行SQL錯誤] {process.stderr}")
+            exit(1)
+        else:
+            self.logger_sql.info(f"[執行SQL完成]")
+        return True
+
     def run(self):
 
         #Create module log
@@ -151,29 +172,36 @@ class SqlExecutionImpl(SqlExecution):
             f.write(sql_str)
         #print("SQL scripts: ", sql_str)
         self.logger_sql.info(f'Execute SQL file: {sql_temp_file}')
-        cmd = f"cd {self.beeline_path}\n"
-        cmd += f"./beeline -u \"jdbc:hive2://{self.host}:{self.port}/default;auth=LDAP\" -n '{self.user}' -p '{self.db_sec}' -f {sql_temp_file}"
-        #print("cmd = ", cmd)
 
-        process = subprocess.run(
-            cmd,
-            shell=True,  # 允許 shell 指令
-            text=True,  # 以字串回傳，而不是 bytes
-            capture_output=True  # 抓 stdout/stderr
-        )
+        if (self.driver.lower() == 'hive2'):
+            return self.executeBeeline(sql_temp_file)
 
-        self.logger_sql.info(f"[執行SQL結果] {process.returncode}")
-        # print("Return code:", process.returncode)
-        # print("STDOUT:\n", process.stdout)
-        # print("STDERR:\n", process.stderr)
+        elif(self.driver.lower() == 'mysql'):
+            driver_class = "com.mysql.cj.jdbc.Driver"
+            jdbc_url = f"jdbc:mysql://{self.host}:{self.port}/{self.db_name}"
+            driver_jar = f"{self.driver_path}\\mysql-connector-j-9.4.0.jar"
 
-        if(process.returncode):
-            self.logger_sql.error(f"[執行SQL錯誤] {process.stderr}")
-            exit(1)
-        else:
-            self.logger_sql.info(f"[執行SQL完成]")
+            dao = JdbcDaoImpl(driver_class, jdbc_url, self.user, self.db_sec, driver_jar)
 
-        return True
+            try:
+                dao.connect()
+                self.logger_sql.info('資料庫連線完成')
+            except Exception as e:
+                self.logger_sql.error(f'資料庫連線失敗 {e}')
+                self.errorHandler.exceptionWriter(f"[連線資料庫錯誤] {e}")
+                exit(1)
+
+            try:
+                dao.executeSql(sql_str)
+                self.logger_sql.info('執行SQL完成')
+            except Exception as e:
+                self.logger_sql.error(f'執行SQL錯誤 {e}')
+                self.errorHandler.exceptionWriter(f"[執行SQL錯誤] {e}")
+                exit(1)
+
+            return True
+
+
 '''       
 
         #Connect DB and execute SQL

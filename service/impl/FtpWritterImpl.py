@@ -34,6 +34,7 @@ from crypto.Aes256Crypto import *
 from pathlib import Path
 import json
 from util.Compressor import *
+from dao.impl.S3DaoImpl import *
 
 class FtpWritterImpl(FtpWritter):
 
@@ -86,12 +87,22 @@ class FtpWritterImpl(FtpWritter):
         else:
             raise Exception(f"[Source type {self.source_type} 未定義]")
 
-        #確認資料來源目的 FTP or S3
+        #確認資料目的 FTP or S3
         self.target_type = fc_config.get('TARGET', 'TYPE', fallback=None)
         if not self.source_type:
             raise Exception(f"[functional config[TARGET][TYPE]不存在]")
         elif(self.target_type.lower() == 'ftp'):
-            pass
+            self.ftp_host = fc_config.get('FTP', 'HOST', fallback=None)
+            self.ftp_port = fc_config.get('FTP', 'PORT', fallback=None)
+            self.ftp_sec_file = fc_config.get('FTP', 'SEC_FILE', fallback=None)
+            self.ftp_key_file = fc_config.get('FTP', 'KEY_FILE', fallback=None)
+            self.ftp_type = fc_config.get('FTP', 'FTP_TYPE', fallback=None)
+        elif (self.target_type.lower() == 's3'):
+            self.s3_host = fc_config.get('S3', 'HOST', fallback=None)
+            self.s3_port = fc_config.get('S3', 'PORT', fallback=None)
+            self.s3_bucket = fc_config.get('S3', 'BUCKET', fallback=None)
+            self.s3_sec_file = fc_config.get('S3', 'ACCESS_ID_FILE', fallback=None)
+            self.s3_key_file = fc_config.get('S3', 'ACCESS_KEY_FILE', fallback=None)
         else:
             raise Exception(f"[Target type {self.target_type} 未定義]")
 
@@ -101,6 +112,8 @@ class FtpWritterImpl(FtpWritter):
             raise Exception(f"[讀取TEMP path錯誤] {e}")
 
         #Get config [TARGET] section
+        self.tg_type = fc_config.get('TARGET', 'TYPE', fallback=None)
+        self.tg_path = fc_config.get('TARGET', 'PATH', fallback=None)
         self.tg_delimiter = fc_config.get('TARGET', 'DELIMITER', fallback=None)
         self.tg_fix_size_file = fc_config.get('TARGET', 'FIX_SIZE_FILE', fallback=None)
         self.tg_new_line_character = "\n" if fc_config.get('TARGET', 'NEW_LINE_CHARACTER', fallback=None) == "\\n" else "\r\n"
@@ -259,22 +272,26 @@ class FtpWritterImpl(FtpWritter):
         sql_str = self.readSqlFile()
         self.logger.info(f'[執行SQL]\n{sql_str}')
 
-        # Export file with delimiter
-        out_file = self.temp_path + "test.txt"
-        if(self.tg_delimiter):
+
+        out_file = self.temp_path + self.out_file_name
+        upload_file = out_file
+        if(self.tg_delimiter):    # Export file with delimiter
             self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter, self.tg_new_line_character, self.tg_encoding)
 
-        #Export file with fixed field length
-        out_file = self.temp_path + "test2.txt"
-        if(self.tg_fix_size_file):
+        elif(self.tg_fix_size_file):  #Export file with fixed field length
             with open(self.tg_fix_size_file, "r", encoding="utf-8") as f:
                 fields_lens = [int(line.strip()) for line in f if line.strip()]
             self.exportFixedLengthFile(dao.conn, sql_str, out_file, fields_lens, self.tg_new_line_character,
                                        self.tg_encoding)
+        else:
+            self.logger.error(f'[分隔符號或固定欄寬未定義]')
+            self.errorHandler.exceptionWriter(f"[分隔符號或固定欄寬未定義]")
+            exit(1)
 
         filelist = []
         filelist.append(out_file)
         print(filelist)
+        out_zip_file = None
         #Compress data
         if(self.zip_sec_file):
             self.zip_user, self.zip_sec_str = readSecFile(self.zip_sec_file)
@@ -282,5 +299,15 @@ class FtpWritterImpl(FtpWritter):
             self.zip_sec = get_gpg_decrypt(self.zip_sec_str, self.zip_salt)
 
         if(self.zip_type):
-            out_zip_file = self.temp_path + "test" + "." + self.zip_type
+            out_zip_file = out_file + "." + self.zip_type.lower()
             Compressor.compress(out_zip_file, filelist, self.zip_sec)
+            upload_file = out_zip_file
+
+        #Upload file
+        if(self.tg_type.lower() == 'ftp'):
+            pass
+        elif(self.tg_type.lower() == 's3'):
+            target_path = Path(upload_file).name
+            s3Dao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, "test", "test")
+            s3Dao.uploadFile(upload_file, target_path)
+

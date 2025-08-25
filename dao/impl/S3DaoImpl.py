@@ -20,12 +20,12 @@ import os
 from typing import List
 
 class S3DaoImpl(FileDao):
-    def __init__(self, bucket: str, endpoint_url: str, aws_access_key_id=None,
+    def __init__(self, bucket: str, host: str, port: str, aws_access_key_id=None,
                  aws_secret_access_key=None, region_name=None):
         try:
             self.s3 = boto3.client(
                 's3',
-                endpoint_url=endpoint_url,
+                endpoint_url=f"http://{host}:{port}",
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
                 region_name=region_name
@@ -79,8 +79,8 @@ if __name__ == "__main__":
     # s3.create_bucket(Bucket="my-bucket-123456")
     # print(s3.list_buckets())
 
-    s3Dao = S3DaoImpl("my-bucket-123456", "http://localhost:4566", "test", "test")
-    s3Dao.uploadFile("C:\\Users\\Baldwin\\PycharmProjects\\dataLake\\temp\\test.txt", "datalake/test.txt")
+    s3Dao = S3DaoImpl("my-bucket-123456", "localhost", 4566, "test", "test")
+    #s3Dao.uploadFile("C:\\Users\\Baldwin\\PycharmProjects\\dataLake\\temp\\test.txt", "datalake/test.txt")
 
     files = s3Dao.listFiles("*")
     print(files)
