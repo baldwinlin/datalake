@@ -43,9 +43,10 @@ class FtpLoaderImpl(FtpLoader):
             host=self.host, 
             port=self.port, 
             user=self.user, 
-            password=self.password, 
-            name_pattern=self.name_pattern, 
-            args=args)
+            password=self.password)
+        
+        #置換參數
+        self.date = str(args.get('date'))
 
     def run(self):
         """ 執行連線 """
@@ -65,7 +66,7 @@ class FtpLoaderImpl(FtpLoader):
         print("FTP/SFTP 連線已關閉。")
         
     def getFtpFileList(self):
-        files = self.ftp_dao.listFiles(self.source_path)
+        files = self.ftp_dao.listFiles(self.source_path, self.name_pattern, self.date)
         return files
 
     def downloadFtpFile(self, name, size):
