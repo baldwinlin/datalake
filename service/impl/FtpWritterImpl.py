@@ -105,11 +105,13 @@ class FtpWritterImpl(FtpWritter):
         self.tg_fix_size_file = fc_config.get('TARGET', 'FIX_SIZE_FILE', fallback=None)
         self.tg_new_line_character = "\n" if fc_config.get('TARGET', 'NEW_LINE_CHARACTER', fallback=None) == "\\n" else "\r\n"
         self.tg_encoding = fc_config.get('TARGET', 'ENCODING', fallback=None)
+        self.tg_fix_size_file = fc_config.get('TARGET', 'FIX_SIZE_FILE', fallback=None)
 
         # Get config [ZIP] section
         self.zip_type = fc_config.get('ZIP', 'ZIP_TYPE', fallback=None)
         self.zip_sec_file = fc_config.get('ZIP', 'SEC_FILE', fallback=None)
         self.zip_key_file = fc_config.get('ZIP', 'KEY_FILE', fallback=None)
+        self.zip_sec = None
 
     def setLog(self, logger_main, errorHandler):
         self.logger_main = logger_main
@@ -257,16 +259,28 @@ class FtpWritterImpl(FtpWritter):
         sql_str = self.readSqlFile()
         self.logger.info(f'[執行SQL]\n{sql_str}')
 
+        # Export file with delimiter
         out_file = self.temp_path + "test.txt"
-        self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter, self.tg_new_line_character, self.tg_encoding)
+        if(self.tg_delimiter):
+            self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter, self.tg_new_line_character, self.tg_encoding)
 
+        #Export file with fixed field length
         out_file = self.temp_path + "test2.txt"
-        field_lengths = [10,15,20]
-        self.exportFixedLengthFile(dao.conn, sql_str, out_file, field_lengths, self.tg_new_line_character, self.tg_encoding)
+        if(self.tg_fix_size_file):
+            with open(self.tg_fix_size_file, "r", encoding="utf-8") as f:
+                fields_lens = [int(line.strip()) for line in f if line.strip()]
+            self.exportFixedLengthFile(dao.conn, sql_str, out_file, fields_lens, self.tg_new_line_character,
+                                       self.tg_encoding)
+
         filelist = []
         filelist.append(out_file)
         print(filelist)
         #Compress data
+        if(self.zip_sec_file):
+            self.zip_user, self.zip_sec_str = readSecFile(self.zip_sec_file)
+            self.zip_salt = readSaltFile(self.zip_key_file)
+            self.zip_sec = get_gpg_decrypt(self.zip_sec_str, self.zip_salt)
+
         if(self.zip_type):
             out_zip_file = self.temp_path + "test" + "." + self.zip_type
-            Compressor.compress_zip(out_zip_file, filelist, None)
+            Compressor.compress(out_zip_file, filelist, self.zip_sec)
