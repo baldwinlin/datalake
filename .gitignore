@@ -1,7 +1,9 @@
 venv
 .venv-*
 .env
-venv_pro/
+
+venv_pro
+
 
 
 # Python

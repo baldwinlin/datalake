@@ -17,6 +17,7 @@ import boto3
 import fnmatch
 from dao.FileDao import FileDao
 import os
+from typing import List
 
 class S3DaoImpl(FileDao):
     def __init__(self, bucket: str, aws_access_key_id=None,
@@ -60,3 +61,14 @@ class S3DaoImpl(FileDao):
         except Exception as e:
             raise Exception(f"S3 上傳檔案失敗 ({local_path}): {e}")
 
+
+if __name__ == "__main__":
+    s3 = boto3.client(
+        "s3",
+        endpoint_url="http://localhost:4566",  # LocalStack
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+        region_name="us-east-1"
+    )
+
+    print(s3.list_buckets())
