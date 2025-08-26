@@ -106,13 +106,14 @@ class SqlExecutionImpl(SqlExecution):
 
         # 日期
         today = datetime.today().strftime("%Y%m%d")
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
         # 取得 sql 檔所在的子目錄名稱 (ddl)
         subdir = sql_file.parent.name
 
         # 建立 log 完整路徑
         log_dir = log_path / "sql" / subdir
-        log_name = f"{filename}_{today}"
+        log_name = f"{filename}_{timestamp}"
 
         # 確保目錄存在
         #log_dir.mkdir(parents=True, exist_ok=True)

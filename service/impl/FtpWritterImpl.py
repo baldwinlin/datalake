@@ -35,6 +35,7 @@ from pathlib import Path
 import json
 from util.Compressor import *
 from dao.impl.S3DaoImpl import *
+from dao.impl.FtpDaoImpl import *
 
 class FtpWritterImpl(FtpWritter):
 
@@ -70,12 +71,12 @@ class FtpWritterImpl(FtpWritter):
                 self.host = self.fc_config.get('DB', 'HOST')
                 self.port = self.fc_config.get('DB', 'PORT')
                 self.db_sec_file = self.fc_config.get('DB', 'SEC_FILE')
-                self.db_sec_key_file = self.fc_config.get('DB', 'KEY_FILE')
+                self.db_key_file = self.fc_config.get('DB', 'KEY_FILE')
                 self.db_name = self.fc_config.get('DB', 'DB_NAME')
                 #self.table_name = self.fc_config.get('DB', 'TABLE_NAME')
                 self.driver = self.fc_config.get('DB', 'DRIVER')
                 self.db_user, self.db_sec_str = readSecFile(self.db_sec_file)
-                self.db_salt = readSaltFile(self.db_sec_key_file)
+                self.db_salt = readSaltFile(self.db_key_file)
                 # self.db_sec = aes256Decrypt(self.sec_str, bytes.fromhex(self.salt))
                 self.db_sec = get_gpg_decrypt(self.db_sec_str, self.db_salt)
             except Exception as e:
@@ -92,11 +93,17 @@ class FtpWritterImpl(FtpWritter):
         if not self.source_type:
             raise Exception(f"[functional config[TARGET][TYPE]不存在]")
         elif(self.target_type.lower() == 'ftp'):
-            self.ftp_host = fc_config.get('FTP', 'HOST', fallback=None)
-            self.ftp_port = fc_config.get('FTP', 'PORT', fallback=None)
-            self.ftp_sec_file = fc_config.get('FTP', 'SEC_FILE', fallback=None)
-            self.ftp_key_file = fc_config.get('FTP', 'KEY_FILE', fallback=None)
-            self.ftp_type = fc_config.get('FTP', 'FTP_TYPE', fallback=None)
+            try:
+                self.ftp_host = fc_config.get('FTP', 'HOST')
+                self.ftp_port = fc_config.getint('FTP', 'PORT')
+                self.ftp_sec_file = fc_config.get('FTP', 'SEC_FILE')
+                self.ftp_key_file = fc_config.get('FTP', 'KEY_FILE')
+                self.ftp_type = fc_config.get('FTP', 'FTP_TYPE')
+                self.ftp_user, self.ftp_sec_str = readSecFile(self.ftp_sec_file)
+                self.ftp_salt = readSaltFile(self.ftp_key_file)
+                self.ftp_sec = get_gpg_decrypt(self.ftp_sec_str, self.ftp_salt)
+            except Exception as e:
+                raise Exception(f"[讀取FTP config錯誤] {e}")
         elif (self.target_type.lower() == 's3'):
             self.s3_host = fc_config.get('S3', 'HOST', fallback=None)
             self.s3_port = fc_config.get('S3', 'PORT', fallback=None)
@@ -305,7 +312,15 @@ class FtpWritterImpl(FtpWritter):
 
         #Upload file
         if(self.tg_type.lower() == 'ftp'):
-            pass
+            print("FTP: ",self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
+            try:
+                ftpDao = FtpDaoImpl(self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
+            except Exception as e:
+                self.logger.error(f'[FTP連線失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[FTP連線錯誤] {e}")
+                exit(1)
+            print("upload file:", upload_file, self.tg_path)
+            ftpDao.uploadFile(upload_file, self.tg_path)
         elif(self.tg_type.lower() == 's3'):
             target_path = Path(upload_file).name
             s3Dao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, "test", "test")
