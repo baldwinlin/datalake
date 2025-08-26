@@ -23,6 +23,7 @@ from logger import Logger
 import time
 import requests
 import json
+import datetime
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -70,20 +71,21 @@ class AirbyteExecutionImpl(AirbyteExecution):
         # 初始化 logger 變數
         self.main_config = main_config
         self.logger_main = None
-        # self.errorHandler = None
+
     
     def _initialize_logger(self):
         # 讀取日誌配置，優先使用 main_config，否則從 main.conf 讀取
         log_config = self.main_config
         airbyte_log_path = f"{log_config['LOG']['LOG_PATH']}/airbyte"
         
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        logger_file_name = f"{self.connection_name}_{timestamp}"
+
         # 創建兩個 Logger 實例
-        Logger.Logger(airbyte_log_path, "airbyte_main") # 主要日誌
-        # Logger.Logger(airbyte_log_path, "airbyte_error_handler") # 錯誤日誌
+        Logger.Logger(airbyte_log_path, logger_file_name) # 主要日誌
 
         # 更新 AirbyteExecution 的 logger_main 和 errorHandler attribute
-        self.logger_main = logging.getLogger('airbyte_main') # 取得主要 logger 實例
-        # self.errorHandler = dataLakeUtilsErrorHandler('airbyte_error_handler') # 取得錯誤處理器實例
+        self.logger_main = logging.getLogger(logger_file_name) # 取得主要 logger 實例
 
     def run(self):
 
