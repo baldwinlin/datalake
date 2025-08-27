@@ -195,9 +195,13 @@ class FtpWritterImpl(FtpWritter):
             cursor = conn.cursor()
 
             # 查詢所有資料
-            cursor.execute(sql_str)
-            rows = cursor.fetchall()
-
+            try:
+                cursor.execute(sql_str)
+                rows = cursor.fetchall()
+            except Exception as e:
+                self.logger.error(f'[執行SQL失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[執行SQL失敗] {e}")
+                exit(1)
             # 取得欄位名稱
             col_names = [desc[0] for desc in cursor.description]
 
@@ -230,6 +234,12 @@ class FtpWritterImpl(FtpWritter):
 
             cursor.execute(sql_str)
             rows = cursor.fetchall()
+        except Exception as e:
+            self.logger.error(f'[執行SQL失敗] {e}')
+            self.errorHandler.exceptionWriter(f"[執行SQL失敗] {e}")
+            exit(1)
+
+        try:
             col_names = [desc[0] for desc in cursor.description]
 
             col_count = len(field_lengths)
