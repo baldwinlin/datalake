@@ -34,6 +34,8 @@ from crypto.Aes256Crypto import *
 from pathlib import Path
 import json
 from util.Compressor import *
+from dao.impl.S3DaoImpl import *
+from dao.impl.FtpDaoImpl import *
 
 class FtpWritterImpl(FtpWritter):
 
@@ -45,6 +47,7 @@ class FtpWritterImpl(FtpWritter):
         self.logger_main = None
         self.errorHandler = None
         self.out_file_name = ""
+        self.args_dict = json.loads(self.args_str)
 
         #create logger
         try:
@@ -69,12 +72,12 @@ class FtpWritterImpl(FtpWritter):
                 self.host = self.fc_config.get('DB', 'HOST')
                 self.port = self.fc_config.get('DB', 'PORT')
                 self.db_sec_file = self.fc_config.get('DB', 'SEC_FILE')
-                self.db_sec_key_file = self.fc_config.get('DB', 'KEY_FILE')
+                self.db_key_file = self.fc_config.get('DB', 'KEY_FILE')
                 self.db_name = self.fc_config.get('DB', 'DB_NAME')
                 #self.table_name = self.fc_config.get('DB', 'TABLE_NAME')
                 self.driver = self.fc_config.get('DB', 'DRIVER')
                 self.db_user, self.db_sec_str = readSecFile(self.db_sec_file)
-                self.db_salt = readSaltFile(self.db_sec_key_file)
+                self.db_salt = readSaltFile(self.db_key_file)
                 # self.db_sec = aes256Decrypt(self.sec_str, bytes.fromhex(self.salt))
                 self.db_sec = get_gpg_decrypt(self.db_sec_str, self.db_salt)
             except Exception as e:
@@ -86,12 +89,34 @@ class FtpWritterImpl(FtpWritter):
         else:
             raise Exception(f"[Source type {self.source_type} 未定義]")
 
-        #確認資料來源目的 FTP or S3
+        #確認資料目的 FTP or S3
         self.target_type = fc_config.get('TARGET', 'TYPE', fallback=None)
         if not self.source_type:
             raise Exception(f"[functional config[TARGET][TYPE]不存在]")
         elif(self.target_type.lower() == 'ftp'):
-            pass
+            try:
+                self.ftp_host = fc_config.get('FTP', 'HOST')
+                self.ftp_port = fc_config.getint('FTP', 'PORT')
+                self.ftp_sec_file = fc_config.get('FTP', 'SEC_FILE')
+                self.ftp_key_file = fc_config.get('FTP', 'KEY_FILE')
+                self.ftp_type = fc_config.get('FTP', 'FTP_TYPE')
+                self.ftp_user, self.ftp_sec_str = readSecFile(self.ftp_sec_file)
+                self.ftp_salt = readSaltFile(self.ftp_key_file)
+                self.ftp_sec = get_gpg_decrypt(self.ftp_sec_str, self.ftp_salt)
+            except Exception as e:
+                raise Exception(f"[讀取FTP config錯誤] {e}")
+        elif (self.target_type.lower() == 's3'):
+            try:
+                self.s3_host = fc_config.get('S3', 'HOST')
+                self.s3_port = fc_config.get('S3', 'PORT')
+                self.s3_bucket = fc_config.get('S3', 'BUCKET')
+                self.s3_sec_file = fc_config.get('S3', 'ASSESS_ID_FILE')
+                self.s3_key_file = fc_config.get('S3', 'ASSESS_KEY_FILE')
+                self.s3_user, self.s3_sec_str = readSecFile(self.s3_sec_file)
+                self.s3_salt = readSaltFile(self.s3_key_file)
+                self.s3_sec = get_gpg_decrypt(self.s3_sec_str, self.s3_salt)
+            except Exception as e:
+                raise Exception(f"[讀取S3 config錯誤] {e}")
         else:
             raise Exception(f"[Target type {self.target_type} 未定義]")
 
@@ -101,15 +126,21 @@ class FtpWritterImpl(FtpWritter):
             raise Exception(f"[讀取TEMP path錯誤] {e}")
 
         #Get config [TARGET] section
+        self.tg_type = fc_config.get('TARGET', 'TYPE', fallback=None)
+        self.tg_path = fc_config.get('TARGET', 'PATH', fallback=None)
+        self.tg_name_pattern = fc_config.get('TARGET', 'NAME_PATTERN', fallback=None)
         self.tg_delimiter = fc_config.get('TARGET', 'DELIMITER', fallback=None)
-        self.tg_fix_size_file = fc_config.get('TARGET', 'FIX_SIZE_FILE', fallback=None)
+        self.tg_col_size_file = fc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
         self.tg_new_line_character = "\n" if fc_config.get('TARGET', 'NEW_LINE_CHARACTER', fallback=None) == "\\n" else "\r\n"
         self.tg_encoding = fc_config.get('TARGET', 'ENCODING', fallback=None)
+        self.tg_col_size_file = fc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
+        self.tg_header = fc_config.get('TARGET', 'HEADER', fallback=None)
 
         # Get config [ZIP] section
         self.zip_type = fc_config.get('ZIP', 'ZIP_TYPE', fallback=None)
         self.zip_sec_file = fc_config.get('ZIP', 'SEC_FILE', fallback=None)
         self.zip_key_file = fc_config.get('ZIP', 'KEY_FILE', fallback=None)
+        self.zip_sec = None
 
     def setLog(self, logger_main, errorHandler):
         self.logger_main = logger_main
@@ -127,9 +158,8 @@ class FtpWritterImpl(FtpWritter):
         today = datetime.today().strftime("%Y%m%d")
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
-        #組合log name及 out file name
-        self.out_file_name = f"{filename}_{timestamp}"
-        log_name = f"{filename}_{today}"
+        #組合log name
+        log_name = f"{filename}_{timestamp}"
 
         # 取得 sql 檔所在的子目錄名稱 (ddl)
         subdir = sql_file.parent.name
@@ -166,20 +196,25 @@ class FtpWritterImpl(FtpWritter):
             cursor = conn.cursor()
 
             # 查詢所有資料
-            cursor.execute(sql_str)
-            rows = cursor.fetchall()
-
+            try:
+                cursor.execute(sql_str)
+                rows = cursor.fetchall()
+            except Exception as e:
+                self.logger.error(f'[執行SQL失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[執行SQL失敗] {e}")
+                exit(1)
             # 取得欄位名稱
             col_names = [desc[0] for desc in cursor.description]
 
             with open(output_file, "w", encoding=encoding, newline="") as f:
                 # 先寫欄位名稱
-                f.write(delimiter.join(col_names) + new_line_ch)
+                if(self.tg_header.lower() == 'y'):
+                    f.write(delimiter.join(col_names) + new_line_ch)
                 # 再寫每一筆資料
                 for row in rows:
                     f.write(delimiter.join(str(v) if v is not None else "" for v in row) + new_line_ch)
 
-            self.logger.info(f'[產出檔案成功]')
+            self.logger.info(f'[產出檔案成功] {output_file}')
 
         except Exception as e:
             self.logger.error(f'[產出檔案錯誤] {e}')
@@ -200,12 +235,26 @@ class FtpWritterImpl(FtpWritter):
 
             cursor.execute(sql_str)
             rows = cursor.fetchall()
+        except Exception as e:
+            self.logger.error(f'[執行SQL失敗] {e}')
+            self.errorHandler.exceptionWriter(f"[執行SQL失敗] {e}")
+            exit(1)
+
+        try:
+            col_names = [desc[0] for desc in cursor.description]
 
             col_count = len(field_lengths)
             if len(cursor.description) != col_count:
                 raise ValueError(f"[欄位數({len(cursor.description)}) 與定長規格({col_count}) 不一致！]")
 
             with open(output_file, "w", encoding=encoding, newline="") as f:
+                if(self.tg_header.lower() == 'y'):
+                    line = ""
+                    for i, value in enumerate(col_names):
+                        text = str(value) if value is not None else ""
+                        fixed_text = text[:field_lengths[i]].ljust(field_lengths[i], pad_char)
+                        line += fixed_text
+                    f.write(line + line_ending)
                 for row in rows:
                     line = ""
                     for i, value in enumerate(row):
@@ -215,7 +264,7 @@ class FtpWritterImpl(FtpWritter):
                         line += fixed_text
                     f.write(line + line_ending)
 
-            self.logger.info(f'[產出檔案成功]')
+            self.logger.info(f'[產出檔案成功] {output_file}')
 
         except Exception as e:
             self.logger.error(f'[產出檔案錯誤] {e}')
@@ -238,12 +287,17 @@ class FtpWritterImpl(FtpWritter):
 
         # Replace SQL arguments
         if (self.args_str is not None):
-            args_dict = json.loads(self.args_str)
-
-            for key, value in args_dict.items():
+            for key, value in self.args_dict.items():
                 sql_str = sql_str.replace(key, value)
 
         return sql_str
+
+    def _getTgFileName(self):
+        tg_file_name = self.tg_name_pattern
+        if(self.tg_name_pattern):
+            for key, value in self.args_dict.items():
+                tg_file_name = tg_file_name.replace(key, value)
+        return tg_file_name
 
     def run(self):
         self.logger.info("[Run FTP writter]")
@@ -257,16 +311,59 @@ class FtpWritterImpl(FtpWritter):
         sql_str = self.readSqlFile()
         self.logger.info(f'[執行SQL]\n{sql_str}')
 
-        out_file = self.temp_path + "test.txt"
-        self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter, self.tg_new_line_character, self.tg_encoding)
+        out_file = self.temp_path + self._getTgFileName()
+        upload_file = out_file
+        if(self.tg_delimiter):    # Export file with delimiter
+            self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter, self.tg_new_line_character, self.tg_encoding)
 
-        out_file = self.temp_path + "test2.txt"
-        field_lengths = [10,15,20]
-        self.exportFixedLengthFile(dao.conn, sql_str, out_file, field_lengths, self.tg_new_line_character, self.tg_encoding)
+        elif(self.tg_col_size_file):  #Export file with fixed field length
+            with open(self.tg_col_size_file, "r", encoding="utf-8") as f:
+                fields_lens = [int(line.strip()) for line in f if line.strip()]
+            self.exportFixedLengthFile(dao.conn, sql_str, out_file, fields_lens, self.tg_new_line_character,
+                                       self.tg_encoding)
+        else:
+            self.logger.error(f'[分隔符號或固定欄寬未定義]')
+            self.errorHandler.exceptionWriter(f"[分隔符號或固定欄寬未定義]")
+            exit(1)
+
         filelist = []
         filelist.append(out_file)
-        print(filelist)
+        #print(filelist)
+        out_zip_file = None
         #Compress data
+        if(self.zip_sec_file):
+            self.zip_user, self.zip_sec_str = readSecFile(self.zip_sec_file)
+            self.zip_salt = readSaltFile(self.zip_key_file)
+            self.zip_sec = get_gpg_decrypt(self.zip_sec_str, self.zip_salt)
+
         if(self.zip_type):
-            out_zip_file = self.temp_path + "test" + "." + self.zip_type
-            Compressor.compress_zip(out_zip_file, filelist, None)
+            out_zip_file = out_file + "." + self.zip_type.lower()
+            Compressor.compress(out_zip_file, filelist, self.zip_sec)
+            upload_file = out_zip_file
+
+        #Upload file
+        if(self.tg_type.lower() == 'ftp'):
+            #print("FTP: ",self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
+            try:
+                ftpDao = FtpDaoImpl(self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
+            except Exception as e:
+                self.logger.error(f'[FTP連線失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[FTP連線錯誤] {e}")
+                exit(1)
+            try:
+                ftpDao.uploadFile(upload_file, self.tg_path)
+                self.logger.info(f"[上傳檔案至FTP成功] {upload_file}")
+            except Exception as e:
+                self.logger.error(f'[FTP上傳失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[FTP上傳失敗] {e}")
+                exit(1)
+        elif(self.tg_type.lower() == 's3'):
+            try:
+                target_path = Path(upload_file).name
+                s3Dao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
+                s3Dao.uploadFile(upload_file, target_path)
+                self.logger.info(f'[上傳檔案至S3成功] {upload_file}')
+            except Exception as e:
+                self.logger.error(f'[上傳檔案至S3失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[上傳檔案至S3失敗] {e}")
+                exit(1)
