@@ -47,6 +47,7 @@ class FtpWritterImpl(FtpWritter):
         self.logger_main = None
         self.errorHandler = None
         self.out_file_name = ""
+        self.args_dict = json.loads(self.args_str)
 
         #create logger
         try:
@@ -127,6 +128,7 @@ class FtpWritterImpl(FtpWritter):
         #Get config [TARGET] section
         self.tg_type = fc_config.get('TARGET', 'TYPE', fallback=None)
         self.tg_path = fc_config.get('TARGET', 'PATH', fallback=None)
+        self.tg_name_pattern = fc_config.get('TARGET', 'NAME_PATTERN', fallback=None)
         self.tg_delimiter = fc_config.get('TARGET', 'DELIMITER', fallback=None)
         self.tg_col_size_file = fc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
         self.tg_new_line_character = "\n" if fc_config.get('TARGET', 'NEW_LINE_CHARACTER', fallback=None) == "\\n" else "\r\n"
@@ -156,9 +158,8 @@ class FtpWritterImpl(FtpWritter):
         today = datetime.today().strftime("%Y%m%d")
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
-        #組合log name及 out file name
-        self.out_file_name = f"{filename}_{timestamp}"
-        log_name = f"{filename}_{today}"
+        #組合log name
+        log_name = f"{filename}_{timestamp}"
 
         # 取得 sql 檔所在的子目錄名稱 (ddl)
         subdir = sql_file.parent.name
@@ -286,12 +287,17 @@ class FtpWritterImpl(FtpWritter):
 
         # Replace SQL arguments
         if (self.args_str is not None):
-            args_dict = json.loads(self.args_str)
-
-            for key, value in args_dict.items():
+            for key, value in self.args_dict.items():
                 sql_str = sql_str.replace(key, value)
 
         return sql_str
+
+    def _getTgFileName(self):
+        tg_file_name = self.tg_name_pattern
+        if(self.tg_name_pattern):
+            for key, value in self.args_dict.items():
+                tg_file_name = tg_file_name.replace(key, value)
+        return tg_file_name
 
     def run(self):
         self.logger.info("[Run FTP writter]")
@@ -305,8 +311,7 @@ class FtpWritterImpl(FtpWritter):
         sql_str = self.readSqlFile()
         self.logger.info(f'[執行SQL]\n{sql_str}')
 
-
-        out_file = self.temp_path + self.out_file_name
+        out_file = self.temp_path + self._getTgFileName()
         upload_file = out_file
         if(self.tg_delimiter):    # Export file with delimiter
             self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter, self.tg_new_line_character, self.tg_encoding)
