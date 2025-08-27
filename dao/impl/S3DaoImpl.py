@@ -78,6 +78,7 @@ if __name__ == "__main__":
     # )
     # s3.create_bucket(Bucket="my-bucket-123456")
     # print(s3.list_buckets())
+    # exit()
 
     s3Dao = S3DaoImpl("my-bucket-123456", "localhost", 4566, "test", "test")
     #s3Dao.uploadFile("C:\\Users\\Baldwin\\PycharmProjects\\dataLake\\temp\\test.txt", "datalake/test.txt")

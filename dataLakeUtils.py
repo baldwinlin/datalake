@@ -6,22 +6,9 @@ Object          : The main function of XUtil process.
                          FL - Ftp loader
                          FW - Ftp writter
                          SQL - SQL execution
-                  mac/linus 執行指令：
-                  python dataLakeUtils.py --fun FL --mc ./conf/main.conf --fc ./conf/ftpload.conf --args {\"date\":\"20250811\"}
-                  python dataLakeUtils.py --fun SQL --mc ./conf/main.conf --fc ./conf/sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
-                  python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
-                  python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"dev\",\"debug\":\"--debug\"}"
-                  python dataLakeUtils.py --fun AIB --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args "{\"connection_name\":\"DW_to_HADP\",\"poll_sec\":20,\"timeout_sec\":1800}"
-                  python dataLakeUtils.py --fun AIC --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args "{\"job_id\":12345,\"poll_sec\":20,\"timeout_sec\":1800}"
-
-                  windows 執行指令：
-                  python dataLakeUtils.py --fun FL --mc .\conf\main.conf --fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
-                  python dataLakeUtils.py --fun SQL --mc .\conf\main.conf --fc .\conf\sample_sql.conf --sqlfile xxx --args {\"R_NAME\":\"Tom\"}
-                  python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"build\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"uat\",\"debug\":\"--debug\"}"
-                  python dataLakeUtils.py --fun DBT --mc ".\conf\main.conf" --fc ".\conf\dbt.conf" --args "{\"batch_date\":\"20250811\",\"command\":\"run\",\"script\":\"exec/marts.fx._bond_report.bbgc_descriptive_info\",\"env\":\"prod\",\"debug\":\"--debug\"}"
-                  python dataLakeUtils.py --fun AIB --mc ".\conf\main.conf" --fc ".\conf\airbyte.conf" --args "{\"connection_name\":\"DW_to_HADP\",\"poll_sec\":20,\"timeout_sec\":1800}"
-                  python dataLakeUtils.py --fun AIC --mc ".\conf\main.conf" --fc ".\conf\airbyte.conf" --args "{\"job_id\":12345,\"poll_sec\":20,\"timeout_sec\":1800}"
-
+                         DBT - DBT
+                         AIB - Airbyte Execution
+                         AIC - Airbyte Cancell
 
 Author          :
 Version         :
@@ -73,8 +60,8 @@ def run(fun, main_config, config, fc_args, sql_file):
         try:
             ftp_writter = FtpWritterImpl(main_config, config, fc_args, sql_file)
         except Exception as e:
-            logger_main.error(f"FtpLoaderImpl {e}")
-            errorHandler.exceptionWriter(f"FtpLoaderImpl {e}")
+            logger_main.error(f"FtpWritterImpl {e}")
+            errorHandler.exceptionWriter(f"FtpWritterImpl {e}")
             exit(1)
 
         if (ftp_writter.run()):

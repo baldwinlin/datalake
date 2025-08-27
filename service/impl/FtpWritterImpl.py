@@ -105,11 +105,17 @@ class FtpWritterImpl(FtpWritter):
             except Exception as e:
                 raise Exception(f"[讀取FTP config錯誤] {e}")
         elif (self.target_type.lower() == 's3'):
-            self.s3_host = fc_config.get('S3', 'HOST', fallback=None)
-            self.s3_port = fc_config.get('S3', 'PORT', fallback=None)
-            self.s3_bucket = fc_config.get('S3', 'BUCKET', fallback=None)
-            self.s3_sec_file = fc_config.get('S3', 'ACCESS_ID_FILE', fallback=None)
-            self.s3_key_file = fc_config.get('S3', 'ACCESS_KEY_FILE', fallback=None)
+            try:
+                self.s3_host = fc_config.get('S3', 'HOST')
+                self.s3_port = fc_config.get('S3', 'PORT')
+                self.s3_bucket = fc_config.get('S3', 'BUCKET')
+                self.s3_sec_file = fc_config.get('S3', 'ASSESS_ID_FILE')
+                self.s3_key_file = fc_config.get('S3', 'ASSESS_KEY_FILE')
+                self.s3_user, self.s3_sec_str = readSecFile(self.s3_sec_file)
+                self.s3_salt = readSaltFile(self.s3_key_file)
+                self.s3_sec = get_gpg_decrypt(self.s3_sec_str, self.s3_salt)
+            except Exception as e:
+                raise Exception(f"[讀取S3 config錯誤] {e}")
         else:
             raise Exception(f"[Target type {self.target_type} 未定義]")
 
@@ -203,7 +209,7 @@ class FtpWritterImpl(FtpWritter):
                 for row in rows:
                     f.write(delimiter.join(str(v) if v is not None else "" for v in row) + new_line_ch)
 
-            self.logger.info(f'[產出檔案成功]')
+            self.logger.info(f'[產出檔案成功] {output_file}')
 
         except Exception as e:
             self.logger.error(f'[產出檔案錯誤] {e}')
@@ -247,7 +253,7 @@ class FtpWritterImpl(FtpWritter):
                         line += fixed_text
                     f.write(line + line_ending)
 
-            self.logger.info(f'[產出檔案成功]')
+            self.logger.info(f'[產出檔案成功] {output_file}')
 
         except Exception as e:
             self.logger.error(f'[產出檔案錯誤] {e}')
@@ -307,7 +313,7 @@ class FtpWritterImpl(FtpWritter):
 
         filelist = []
         filelist.append(out_file)
-        print(filelist)
+        #print(filelist)
         out_zip_file = None
         #Compress data
         if(self.zip_sec_file):
@@ -322,17 +328,27 @@ class FtpWritterImpl(FtpWritter):
 
         #Upload file
         if(self.tg_type.lower() == 'ftp'):
-            print("FTP: ",self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
+            #print("FTP: ",self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
             try:
                 ftpDao = FtpDaoImpl(self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
             except Exception as e:
                 self.logger.error(f'[FTP連線失敗] {e}')
                 self.errorHandler.exceptionWriter(f"[FTP連線錯誤] {e}")
                 exit(1)
-            print("upload file:", upload_file, self.tg_path)
-            ftpDao.uploadFile(upload_file, self.tg_path)
+            try:
+                ftpDao.uploadFile(upload_file, self.tg_path)
+                self.logger.info(f"[上傳檔案至FTP成功] {upload_file}")
+            except Exception as e:
+                self.logger.error(f'[FTP上傳失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[FTP上傳失敗] {e}")
+                exit(1)
         elif(self.tg_type.lower() == 's3'):
-            target_path = Path(upload_file).name
-            s3Dao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, "test", "test")
-            s3Dao.uploadFile(upload_file, target_path)
-
+            try:
+                target_path = Path(upload_file).name
+                s3Dao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
+                s3Dao.uploadFile(upload_file, target_path)
+                self.logger.info(f'[上傳檔案至S3成功] {upload_file}')
+            except Exception as e:
+                self.logger.error(f'[上傳檔案至S3失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[上傳檔案至S3失敗] {e}")
+                exit(1)
