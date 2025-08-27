@@ -64,7 +64,7 @@ def run(fun, main_config, config, fc_args, sql_file):
     if(fun == 'FL'):
         print("Run FTP Loader")
         fc_args = json.loads(fc_args)
-        service = FtpLoaderImpl(config, fc_args)
+        service = FtpLoaderImpl(main_config, config, fc_args)
         service.run()
 
 

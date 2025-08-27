@@ -52,7 +52,18 @@ class Compressor:
             else:
                 file_list = zf.namelist()
                 zf.extractall(path=extract_path)
-            return file_list
+
+            filtered = []
+            for file in file_list:
+                if file.endswith('/'):
+                    continue
+                base = os.path.basename(file)
+                if file.startswith('__MACOSX/') or base.startswith('./_') or base == '.DS_store':
+                    continue
+                full_path = os.path.join(extract_path, file)
+                if os.path.isfile(full_path):
+                    filtered.append(file)
+            return filtered
 
     # ========== 7Z ==========
     @staticmethod

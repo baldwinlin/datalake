@@ -27,3 +27,5 @@ logs/**/*
 mock_execution
 
 downloads/
+
+temp/

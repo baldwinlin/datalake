@@ -174,7 +174,8 @@ class FtpDaoImpl(FileDao):
 
         """檢查遠端檔案是否已經完整下載"""
         if exists_local_file and local_file_size == remote_file_size:
-            return f"File '{file_name}'已經完整下載過."
+            print(f"File '{file_name}'已經完整下載過")
+            return file_name
 
         """如果沒有完整下載，則開始下載"""
         # 斷點續傳位置
@@ -213,7 +214,8 @@ class FtpDaoImpl(FileDao):
         final_size = os.path.getsize(local_path)
         if  final_size != remote_file_size:
             raise IOError("下載大小不符")
-        return f"downloaded:{file_name}"
+        print(f"完成下載: {file_name}")
+        return file_name
 
     def uploadFile(self, local_path: str, remote_path: str) -> None:
         try:
