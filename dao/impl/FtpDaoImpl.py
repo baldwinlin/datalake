@@ -215,12 +215,19 @@ class FtpDaoImpl(FileDao):
             raise IOError("下載大小不符")
         return f"downloaded:{file_name}"
 
-    def uploadFile(self, local_path: str, remote_path: str) -> None:
-        try:
-            with open(local_path, "rb") as f:
-                self.ftp.storbinary(f"STOR {remote_path}", f)
-        except Exception as e:
-            raise Exception(f"FTP 上傳檔案失敗 ({local_path}): {e}")
+    def uploadFile(self, local_file: str, remote_path: str) -> None:
+        remote_file = os.path.join(remote_path, os.path.basename(local_file))
+        if self.ftp_type == "FTP":
+            try:
+                with open(local_file, "rb") as f:
+                    self.FTP.storbinary(f"STOR {remote_file}", f)
+            except Exception as e:
+                raise Exception(f"FTP 上傳檔案失敗 ({local_file} -> {remote_file}): {e}")
+        elif self.ftp_type == "SFTP":
+            try:
+                self.SFTP.put(local_file, remote_file)
+            except Exception as e:
+                raise Exception(f"FTP 上傳檔案失敗 ({local_file} -> {remote_file}): {e}")
 
     def close(self):
         if self.FTP:
