@@ -20,6 +20,7 @@ from logger import Logger
 import time
 import requests
 import json
+import datetime
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -44,9 +45,12 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
         self.db_sec = get_gpg_decrypt(self.sec_str, self.salt)
 
         args = json.loads(args)
-        self.job_id = int(args.get("job_id"))
+        self.connection_name = str(args.get("connection_name"))
         self.poll_sec = int(args.get("poll_sec")) 
         self.timeout_sec = int(args.get("timeout_sec")) 
+
+        self.job_id = None
+
 
         # 初始化 logger 變數
         self.main_config = main_config
@@ -57,48 +61,78 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
         log_config = self.main_config
         airbyte_log_path = f"{log_config['LOG']['LOG_PATH']}/airbyte"
         
-        # 創建 Logger 實例 - 使用相同的 airbyte_main logger
-        Logger.Logger(airbyte_log_path, "airbyte_main") # 主要日誌
+
+        # 創建 Logger 實例 - 
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        logger_file_name = f"[Cancel]{self.connection_name}_{timestamp}"
+        Logger.Logger(airbyte_log_path, logger_file_name) # 主要日誌
 
         # 更新 AirbyteExecution 的 logger_main attribute
-        self.logger_main = logging.getLogger('airbyte_main') # 取得主要 logger 實例
+        self.logger_main = logging.getLogger(logger_file_name) # 取得主要 logger 實例
 
     def run(self):
         """執行強制取消流程"""
         # 初始化 logger
         self._initialize_logger()
 
-        # 驗證必要參數
-        if not self.job_id:
-            self.logger_main.error("必須提供 job_id 參數")
-            return False
-        self.logger_main.info(f"啟動 Airbyte 強制取消作業 - job_id: {self.job_id}")
-
         try:
-            # 直接取消指定的作業
-            cancel_result = self.cancelJob(self.job_id)
-            if cancel_result is False:
-                self.logger_main.error(f"取消作業 {self.job_id} 失敗")
-                return False
-
-            # 等待取消完成
-            final_status = self.waitForCancellation(self.job_id)
-            if final_status is None:
-                self.logger_main.error(f"無法取得作業 {self.job_id} 的最終狀態")
-                return False
-            elif final_status == "cancelled":
-                self.logger_main.info(f"作業 {self.job_id} 已成功取消")
-                return True
-            else:
-                self.logger_main.error(f"作業 {self.job_id} 最終狀態: {final_status}")
-                return False
-                
+            response = self.getConnectionId()
         except requests.exceptions.HTTPError as e:
             self.logger_main.error(e)
             return False
         except Exception as e:
-            self.logger_main.error(f"取消作業失敗，非預期的錯誤: {e}")
+            self.logger_main.error(f"取得 connectionId 失敗，非預期的錯誤: {e}")
             return False
+
+        if response is None:
+            self.logger_main.error(f"找不到 {self.connection_name} 對應的 connection Id")
+            return False
+        
+        if response:
+            self.logger_main.info(f"找到 {self.connection_name} 對應的 connection Id: {response}")
+
+            try:
+                job_id, job_status = self.getSyncingJobId()
+            except requests.exceptions.HTTPError as e:
+                self.logger_main.error(e)
+                return False
+            except Exception as e:
+                self.logger_main.error(f"獲取同步作業ID，非預期的錯誤: {e}")
+                return False 
+            
+            if job_id is None or job_status is None:
+                self.logger_main.error(f"無法獲取{self.connection_name}底下的同步作業id和狀態 或是沒有同步的作業在 running 或是 pending")
+                return False
+            else:    
+                self.logger_main.info(f"找到{job_id}, 其狀態為{job_status}")
+                self.logger_main.info(f"啟動 Airbyte 強制取消 {self.connection_name} 的同步作業 - job_id: {job_id}")
+
+
+            try:
+                # 直接取消指定的作業
+                cancel_result = self.cancelJob(self.job_id)
+                if cancel_result is False:
+                    self.logger_main.error(f"取消作業 {self.job_id} 失敗")
+                    return False
+
+                # 等待取消完成
+                final_status = self.waitForCancellation(self.job_id)
+                if final_status is None:
+                    self.logger_main.error(f"無法取得作業 {self.job_id} 的最終狀態")
+                    return False
+                elif final_status == "cancelled":
+                    self.logger_main.info(f"作業 {self.job_id} 已成功取消")
+                    return True
+                else:
+                    self.logger_main.error(f"作業 {self.job_id} 最終狀態: {final_status}")
+                    return False
+                    
+            except requests.exceptions.HTTPError as e:
+                self.logger_main.error(e)
+                return False
+            except Exception as e:
+                self.logger_main.error(f"取消作業失敗，非預期的錯誤: {e}")
+                return False
         
     def getAccessToken(self):
         access_token_api = f"{self.airbyte_root_api}/applications/token"
@@ -116,26 +150,96 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
         self.logger_main.info(f"取得 access token 用於強制取消作業")
         token = response.json().get("access_token")
         return token
-
-    def cancelJob(self, job_id):
-        """列出正在執行的 job_id """
-        get_job_api = f"{self.airbyte_root_api}/jobs/{self.job_id}"
+    
+    def getConnectionId(self):
+        offset = 0
+        limit = 2000
+        list_connections_api = f"{self.airbyte_root_api}/connections?workspaceIds={self.workspace_ids}&offset={offset}&limit={limit}"
         headers = {
             "accept": "application/json",
             "authorization": f"Bearer {self.getAccessToken()}"
-        }
-        self.logger_main.info(f"正在檢查 job 狀態: {self.job_id}")
-        running_job_response = requests.get(url=get_job_api, headers=headers, timeout=20, verify=False)
-        
+        }        
+        self.logger_main.info(f"嘗試抓取 {self.connection_name} 對應的 connectionId....先取得 workspace 內的連線列表")
+        scanned = 0
+        available_names = []
+
+        while list_connections_api:
+
+            response = requests.get(url=list_connections_api, headers=headers, timeout=20, verify= False)
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                raise requests.exceptions.HTTPError(f"取得 connectionId 遇到 HTTP 錯誤，請檢查登入 airbyte 所需參數。[Airbyte]: {e}")
+
+            connections = response.json().get("data", [])
+            scanned += len(connections)
+            self.logger_main.info(f"workspace 在本頁擁有的連線數量: {len(connections)}，累計掃描{scanned}個連線")
+
+            if not connections:
+                return None
+    
+            # 使用 connection name 指定要執行的 connection
+            for connection in connections:
+                name = connection.get("name")
+                if name:
+                    available_names.append(name)
+                if name == self.connection_name:
+                    self.connection_id = connection.get("connectionId")
+                    target_id = self.connection_id
+                    return target_id
+
+            # 如果找不到對應的 connection Id，則切換到下一頁
+            if len(connections) < limit:
+                break  # 沒有更多連線了，結束循環
+
+            offset += limit
+            list_connections_api = f"{self.airbyte_root_api}/connections?workspaceIds={self.workspace_ids}&offset={offset}&limit={limit}"
+            self.logger_main.info(f"尚未找到 {self.connection_name} 對應的 connectionId，切換到下一頁繼續找，offset={offset}, limit={limit}")
+
+        self.connection_id = None
+        return None
+
+
+    def getSyncingJobId(self):
+
+        list_running_jobs_api = f"{self.airbyte_root_api}/jobs?connectionId={self.connection_id}&jobType=sync&status=running"
+        list_pending_jobs_api = f"{self.airbyte_root_api}/jobs?connectionId={self.connection_id}&jobType=sync&status=pending"
+        headers = {
+            "accept": "application/json",
+            "authorization": f"Bearer {self.getAccessToken()}"
+            }
+        running_jobs_response = requests.get(url=list_running_jobs_api, headers=headers, verify=False)
+        pending_jobs_response = requests.get(url=list_pending_jobs_api, headers=headers, verify=False)
+
         try:
-            running_job_response.raise_for_status()
+            running_jobs_response.raise_for_status()
         except requests.exceptions.HTTPError as e:
-            raise requests.exceptions.HTTPError(f"監聽失敗遇到 HTTP 錯誤，請檢查 airbyte 連線參數 和 job_id 有效性， [Airbyte]: {e}")
+            raise requests.exceptions.HTTPError(f"取得 running 同步作業 id 失敗遇到 HTTP 錯誤， [Airbyte]: {e}")
 
-        if running_job_response.json().get("status") not in ["pending", "running"]:
-            self.logger_main.warning(f"作業 {self.job_id} 當前狀態: {running_job_response.json().get('status')}，無法取消")
-            return False
+        try:
+            pending_jobs_response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise requests.exceptions.HTTPError(f"取得 pending 同步作業 id 失敗遇到 HTTP 錯誤， [Airbyte]: {e}")
 
+
+        running_result = running_jobs_response.json().get("data", []) or []
+        pending_result = pending_jobs_response.json().get("data", []) or []
+    
+        if running_result:
+            job = running_result[0]
+        elif pending_result:
+            job = pending_result[0]
+        else:
+            return None, None
+        
+        job_id = job.get("jobId")
+        status = job.get("status")
+        self.job_id = job_id
+        return job_id, status
+        
+       
+
+    def cancelJob(self, job_id):
         
         """取消指定的作業"""
         cancel_job_api = f"{self.airbyte_root_api}/jobs/{job_id}"

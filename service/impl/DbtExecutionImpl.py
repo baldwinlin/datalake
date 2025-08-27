@@ -21,7 +21,7 @@ from logger import Logger
 # from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
 import json
 
-
+import os
 
 class DbtExecutionImpl(DbtExecution):
     def __init__(self, main_config, config, args):
@@ -30,6 +30,7 @@ class DbtExecutionImpl(DbtExecution):
         args = json.loads(args)
         # 從 dbt.conf 讀取 shell 配置
         self.shellBase = config['SHELL']['SHELL_BASE']
+        self.shellBase = os.path.expandvars(os.path.expanduser(self.shellBase.strip()))
         
         # 從 args 讀取執行參數
         self.command = args['command']
