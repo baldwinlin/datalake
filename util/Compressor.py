@@ -15,7 +15,10 @@ class Compressor:
             Compressor.compress_zip(archive_name, files, password)
         elif ext == ".7z":
             Compressor.compress_7z(archive_name, files, password)
-        elif ext in [".tar", ".gz", ".tgz", ".tar.gz"]:
+        elif ext == ".gz" and len(files) == 1:
+            # 單一 .gz 檔案
+            Compressor.compress_gz(files[0], archive_name)
+        elif ext in [".tar", ".tgz", ".tar.gz"]:
             Compressor.compress_tar(archive_name, files)
         else:
             raise ValueError(f"Unsupported format: {ext}")
@@ -28,10 +31,50 @@ class Compressor:
             return Compressor.decompress_zip(archive_name, extract_path, password)
         elif ext == ".7z":
             return Compressor.decompress_7z(archive_name, extract_path, password)
-        elif ext in [".tar", ".gz", ".tgz", ".tar.gz"]:
+        elif ext == ".gz" and not archive_name.endswith(".tar.gz"):
+            # 單一 .gz 檔案
+            return Compressor.decompress_gz(archive_name, extract_path)
+        elif ext in [".tar", ".tgz", ".tar.gz"]:
             return Compressor.decompress_tar(archive_name, extract_path)
         else:
             raise ValueError(f"Unsupported format: {ext}")
+
+    @staticmethod
+    def _filter_system_files(file_list, extract_path):
+        """過濾掉系統產生的檔案"""
+        filtered = []
+        for file in file_list:
+            if file.endswith('/'):
+                continue
+            base = os.path.basename(file)
+            
+            # macOS 系統檔案
+            if (file.startswith('__MACOSX/') or 
+                base.startswith('._') or 
+                base == '.DS_Store'):
+                continue
+                
+            # Windows 系統檔案
+            if (base == 'Thumbs.db' or 
+                base == 'desktop.ini' or
+                file.startswith('$RECYCLE.BIN/') or
+                file.startswith('System Volume Information/')):
+                continue
+                
+            # Linux 系統檔案
+            if (base.startswith('.Trash-') or 
+                base == '.directory' or
+                base.startswith('.fuse_hidden')):
+                continue
+                
+            # 通用隱藏檔案
+            if base.startswith('.'):
+                continue
+                
+            full_path = os.path.join(extract_path, file)
+            if os.path.isfile(full_path):
+                filtered.append(file)
+        return filtered
 
     # ========== ZIP (AES-256) ==========
     @staticmethod
@@ -53,17 +96,7 @@ class Compressor:
                 file_list = zf.namelist()
                 zf.extractall(path=extract_path)
 
-            filtered = []
-            for file in file_list:
-                if file.endswith('/'):
-                    continue
-                base = os.path.basename(file)
-                if file.startswith('__MACOSX/') or base.startswith('./_') or base == '.DS_store':
-                    continue
-                full_path = os.path.join(extract_path, file)
-                if os.path.isfile(full_path):
-                    filtered.append(file)
-            return filtered
+            return Compressor._filter_system_files(file_list, extract_path)
 
     # ========== 7Z ==========
     @staticmethod
@@ -76,7 +109,8 @@ class Compressor:
     def decompress_7z(archive_name, extract_path, password=None):
         with py7zr.SevenZipFile(archive_name, 'r', password=password) as archive:
             archive.extractall(path=extract_path)
-            return archive.getnames()
+            file_list = archive.getnames()
+            return Compressor._filter_system_files(file_list, extract_path)
 
     # ========== TAR / TAR.GZ ==========
     @staticmethod
@@ -95,7 +129,8 @@ class Compressor:
             mode = "r:gz"
         with tarfile.open(tar_filename, mode) as tar:
             tar.extractall(path=extract_path)
-            return tar.getnames()
+            file_list = tar.getnames()
+            return Compressor._filter_system_files(file_list, extract_path)
 
     # ========== GZ 單檔 ==========
     @staticmethod
@@ -105,12 +140,22 @@ class Compressor:
                 shutil.copyfileobj(f_in, f_out)
 
     @staticmethod
-    def decompress_gz(gz_path, output_path):
+    def decompress_gz(gz_path, extract_path):
+        # 從 .gz 檔名推測原始檔名
+        base_name = os.path.basename(gz_path)
+        if base_name.endswith('.gz'):
+            original_name = base_name[:-3]  # 移除 .gz
+        else:
+            original_name = base_name
+            
+        output_path = os.path.join(extract_path, original_name)
+        
         with gzip.open(gz_path, "rb") as f_in:
             with open(output_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
-        # 單檔，所以回傳原始檔名
-        return [os.path.basename(output_path)]
+        
+        # 回傳解壓縮後的檔案列表
+        return [original_name]
 
 
 

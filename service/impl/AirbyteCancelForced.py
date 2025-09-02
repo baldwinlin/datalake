@@ -33,7 +33,7 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
         self.workspace_ids = config['AIRBYTE']['WORKSPACE_IDS']
         self.airbyte_root_api = config['AIRBYTE']['AIRBYTE_ROOT_API']
         
-        #測試環境 正式執行時需要註解掉
+        # 測試環境 正式執行時需要註解掉
         # self.user = config['AIRBYTE']['CLIENT_ID']
         # self.db_sec = config['AIRBYTE']['CLIENT_SECRET']
 
@@ -46,8 +46,8 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
 
         args = json.loads(args)
         self.connection_name = str(args.get("connection_name"))
-        self.poll_sec = int(args.get("poll_sec")) 
-        self.timeout_sec = int(args.get("timeout_sec")) 
+        self.poll_sec = int(args.get("poll_sec", 180)) 
+        self.timeout_sec = int(args.get("timeout_sec", 3600)) 
 
         self.job_id = None
 
@@ -264,7 +264,7 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
         """等待作業取消完成"""
         start = time.time()
         last_status = None
-        token = self.getAccessToken()
+        # token = self.getAccessToken()
         
         while True:
             elapsed = time.time() - start
@@ -276,17 +276,17 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
             get_job_api = f"{self.airbyte_root_api}/jobs/{job_id}"
             headers = {
                 "accept": "application/json",
-                "authorization": f"Bearer {token}"
+                "authorization": f"Bearer {self.getAccessToken()}"
             }
             
             response = requests.get(url=get_job_api, headers=headers, timeout=20, verify=False)
             
             # 如果 token 過期，嘗試刷新
-            if response.status_code == 401:
-                self.logger_main.warning(f"Token 過期，刷新 token...")
-                token = self.getAccessToken()
-                headers["authorization"] = f"Bearer {token}"
-                response = requests.get(url=get_job_api, headers=headers, timeout=20, verify=False)
+            # if response.status_code == 401:
+            #     self.logger_main.warning(f"Token 過期，刷新 token...")
+            #     token = self.getAccessToken()
+            #     headers["authorization"] = f"Bearer {token}"
+            #     response = requests.get(url=get_job_api, headers=headers, timeout=20, verify=False)
             
             try:
                 response.raise_for_status()

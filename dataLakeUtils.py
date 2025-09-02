@@ -31,6 +31,8 @@ from service.impl.DbtExecutionImpl import *
 from service.impl.AirbyteExecutionImpl import *
 from service.impl.AirbyteCancelForced import *
 
+from util.CleanTempFIle import *
+
 
 from service.FtpLoader import FtpLoader
 
@@ -66,6 +68,7 @@ def run(fun, main_config, config, fc_args, sql_file):
 
         if (ftp_writter.run()):
             logger_main.info("Run FTP writter success")
+            exit(0)
 
     elif(fun == 'SQL'):
         logger_main.info("Run SQL Exception")
@@ -79,6 +82,7 @@ def run(fun, main_config, config, fc_args, sql_file):
         sql_execution.setLog(logger_main, errorHandler)
         if(sql_execution.run()):
             logger_main.info("Run SQL Exception success")
+            exit(0)
 
     elif(fun == 'DBT'):
         logger_main.info("Run DBT Execution")
@@ -92,8 +96,10 @@ def run(fun, main_config, config, fc_args, sql_file):
         result = dbt_execution.run()
         if result == True:
             logger_main.info("Run DBT Execution success")
+            exit(0)
         elif result == False:
             logger_main.error("Run DBT Execution failed")
+            exit(1)
 
     elif(fun == 'AIB'):
         logger_main.info("Run Airbyte Execution")
@@ -107,8 +113,10 @@ def run(fun, main_config, config, fc_args, sql_file):
         result = airbyte_execution.run()
         if result == True:
             logger_main.info("Run Airbyte Execution success")
+            exit(0)
         elif result == False:
             logger_main.error("Run Airbyte Execution failed")
+            exit(1)
 
     elif(fun == 'AIC'):
         logger_main.info("Run Airbyte Cancel Forced")
@@ -121,8 +129,10 @@ def run(fun, main_config, config, fc_args, sql_file):
         result = airbyte_cancel.run()
         if result == True:
             logger_main.info("Run Airbyte Cancel Forced success")
+            exit(0)
         elif result == False:
             logger_main.error("Run Airbyte Cancel Forced failed")
+            exit(1)
     else:
         print("No such function")
         exit(1)

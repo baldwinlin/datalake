@@ -1,36 +1,107 @@
-from cgitb import reset
-from curses import endwin
+# from cgitb import reset
+# from curses import endwin
 from typing import Optional
 
 class Reformatter:
 
     @staticmethod
-    def decode(file_path: str, preferred_encoding: str) -> Optional[str]:
+    def decode(file_path: str, decoding: str) -> Optional[str]:
         with open(file_path, "rb") as f:
             content = f.read()
         
         errors_handling = "replace"
-        decoded_content = content.decode(preferred_encoding, errors_handling)
-        if decoded_content is not None:
-            return decoded_content
+        decoded_content = content.decode(decoding, errors_handling)
+        return decoded_content
 
-        if decoded_content is None:
-            print(f" {file_path} 解碼失敗，無法用指定的 {preferred_encoding} 模式進行解碼")
-            return None
-    
+    @staticmethod
+    def checking_decoding_valid(file_path: str, decoding: str):
+        with open(file_path, "rb") as f:
+            original_content = f.read()
+       
+        original_lines = Reformatter._split_content_with_row_lists(original_content)
+        problematic_lines = []
+        for index, (line, _ ) in enumerate(original_lines):
+            try:
+                line.decode(decoding, errors = "strict")
+            except UnicodeDecodeError:
+                problematic_lines.append(index + 1)
+        return problematic_lines    
+            
+
     @staticmethod
     def encoding_to_uft_8(file_path: str, encoding: str, temp_upload_path: str):
-        content = Reformatter.decode(file_path, encoding)
+        with open(file_path, "rb") as f:
+            content = f.read()
+
+        # 使用strict模式，如果有解码错误就抛出异常
+        try:
+            decoded_content = content.decode(encoding, errors="strict")
+        except UnicodeDecodeError as e:
+            raise Exception(f"文件 {file_path} 包含無法用 {encoding} 解碼的內容: {e}")
+
         with open(temp_upload_path, "w", encoding="utf-8") as f:
-            f.write(content)
+            f.write(decoded_content)
+
+    @staticmethod
+    def checking_file_valid(file_path: str, col_size_file: str, encoding: str):
+        col_sizes = Reformatter._read_sizes_file(col_size_file, encoding = "utf-8")
+        total_row_size = sum(col_sizes)
+        
+        # 直接讀取原始 byte 內容來檢查長度，而不是解碼後的字串長度
+        with open(file_path, "rb") as f:
+            content_bytes = f.read()
+        
+        lines = Reformatter._split_content_with_row_lists(content_bytes)
+
+        error_lines = []
+        for index, (line, _ ) in enumerate(lines):
+            if len(line) != total_row_size:
+                error_lines.append(index)
+        if len(error_lines) >0 :
+            return error_lines
+        
+        return True
+
+    @staticmethod
+    def insert_delimiter_with_sizes_file(file_path: str, col_size_file: str, temp_upload_path: str):
+        with open(file_path, "rb") as f:
+            content_bytes = f.read()
+
+        delimiter = b","
+        col_sizes = Reformatter._read_sizes_file(col_size_file, encoding = "utf-8")
+
+        #將原始檔案內容分行寫進列表
+        lines = Reformatter._split_content_with_row_lists(content_bytes)
+
+        output = []
+        for line, nl in lines:
+            reformated_line = Reformatter._split_line_by_col_size(line, col_sizes)
+            output.append(delimiter.join(reformated_line) + nl)
+
+        result = b"".join(output)
+        with open(temp_upload_path, "wb") as f:
+            reformated_file =f.write(result)
+        
+        return reformated_file
 
 
+ 
+    @staticmethod
+    def remove_header(file_path: str, temp_upload_path: str, encoding: str):
+        with open(file_path, "r", encoding = encoding) as f:
+            lines = f.readlines()
+        data_lines = lines[1:]
+        result = "".join(data_lines)
+
+        with open(temp_upload_path, "w", encoding = encoding) as f:
+            f.write(result)
+    
     @staticmethod
     def _read_sizes_file(col_size_file: str, encoding: str):
         col_sizes = []
         col_sizes_str = Reformatter.decode(col_size_file, encoding)
-        if col_sizes_str is None:
-            raise ValueError("解碼失敗")
+        if not col_sizes_str:
+            raise Exception("長度檔為空")
 
         for raw in col_sizes_str.splitlines():
             space = raw.strip()
@@ -38,9 +109,6 @@ class Reformatter:
                 continue
             size = space.rstrip(",").strip()
             col_sizes.append(int(size))
-        if not col_sizes:
-            raise ValueError("長度檔為空")
-
         return col_sizes
 
     @staticmethod
@@ -53,61 +121,33 @@ class Reformatter:
         return fields
 
     @staticmethod
-    def _split_content_with_row_lists(content: str):
-        lines = []
-        for raw in content.splitlines(keepends=True):
-            if raw.endswith("\r\n"):
-                line, nl = raw[:-2], "\r\n"
-            elif raw.endswith("\n"):
-                line, nl = raw[:-1], "\n"
-            elif raw.endswith("\r"):
-                line, nl = raw[:-1], "\r"
-            else:
-                line, nl = raw, ""
-            lines.append((line, nl))
-        # print(f"讀取換行陣列和換行符號：\n{lines}")
-        return lines
-
-    @staticmethod
-    def insert_delimiter_with_sizes_file(file_path: str, col_size_file: str, temp_upload_path: str):
-        content = Reformatter.decode(file_path,"utf-8")
-        delimiter = ","
-        if content is None:
-            raise ValueError("解碼失敗")
-
-
-        col_sizes = Reformatter._read_sizes_file(col_size_file, encoding = "utf-8")
-        lines = Reformatter._split_content_with_row_lists(content)
-
-        output = []
-        for line, nl in lines:
-            reformated_line = Reformatter._split_line_by_col_size(line, col_sizes)
-            output.append(delimiter.join(reformated_line) + nl)
-
-        result = "".join(output)
-        with open(temp_upload_path, "w", encoding="utf-8") as f:
-            f.write(result) 
- 
-    @staticmethod
-    def remove_header(file_path: str, temp_upload_path: str):
-        with open(file_path, "r", encoding = "utf-8") as f:
-            lines = f.readlines()
-        data_lines = lines[1:]
-        result = "".join(data_lines)
-
-        with open(temp_upload_path, "w", encoding = "utf-8") as f:
-            f.write(result)
-
-
-
-    @staticmethod
-    def reformat(file_path, output_path, delimiter=",", new_line_ch="\n", encoding="utf-8"):
-        with open(file_path, "r", encoding=encoding) as f:
-            lines = f.readlines()
-        with open(output_path, "w", encoding=encoding) as f:
-            for line in lines:
-                f.write(line)
-
+    def _split_content_with_row_lists(content):
+        if isinstance(content, str):
+            lines = []
+            for raw in content.splitlines(keepends=True):
+                if raw.endswith("\r\n"):
+                    line, nl = raw[:-2], "\r\n"
+                elif raw.endswith("\n"):
+                    line, nl = raw[:-1], "\n"
+                elif raw.endswith("\r"):
+                    line, nl = raw[:-1], "\r"
+                else:
+                    line, nl = raw, ""
+                lines.append((line, nl))
+            return lines
+        elif isinstance(content, bytes):
+            lines = []
+            for raw in content.splitlines(keepends=True):
+                if raw.endswith(b"\r\n"):
+                    line, nl = raw[:-2], b"\r\n"
+                elif raw.endswith(b"\n"):
+                    line, nl = raw[:-1], b"\n"
+                elif raw.endswith(b"\r"):
+                    line, nl = raw[:-1], b"\r"
+                else:
+                    line, nl = raw, b""
+                lines.append((line, nl))
+            return lines
 
 if __name__ == "__main__":
 

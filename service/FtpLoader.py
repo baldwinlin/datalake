@@ -74,12 +74,12 @@ class FtpLoader(abc.ABC):
     def reformatFile(self, ftp_file_list, delimiter, fix_size_file):
         return NotImplemented
 
-    '''
-        @db_name/@table_name: get from htp config file
-    '''
-    @abc.abstractmethod
-    def writeToHive(self, ftp_file_list, db_connection, db_name, table_name):
-        return NotImplemented
+    # '''
+    #     @db_name/@table_name: get from htp config file
+    # '''
+    # @abc.abstractmethod
+    # def writeToHive(self, ftp_file_list, db_connection, db_name, table_name):
+    #     return NotImplemented
 
     '''
         @object_store_path/@access_id/@access_key: get form ftp config file
