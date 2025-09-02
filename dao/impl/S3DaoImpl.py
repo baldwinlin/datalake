@@ -46,7 +46,7 @@ class S3DaoImpl(FileDao):
             for page in page_iterator:
                 for obj in page.get('Contents', []):
                     key = obj['Key']
-                    if fnmatch.fnmatch(os.path.basename(key), pattern):
+                    if fnmatch.fnmatch(key, pattern):
                         files.append(key)
             return files
         except Exception as e:
@@ -83,5 +83,5 @@ if __name__ == "__main__":
     s3Dao = S3DaoImpl("my-bucket-123456", "localhost", 4566, "test", "test")
     #s3Dao.uploadFile("C:\\Users\\Baldwin\\PycharmProjects\\dataLake\\temp\\test.txt", "datalake/test.txt")
 
-    files = s3Dao.listFiles("*")
+    files = s3Dao.listFiles("*test*")
     print(files)
