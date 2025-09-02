@@ -51,13 +51,8 @@ class AirbyteExecutionImpl(AirbyteExecution):
         args = json.loads(args)
         self.connection_name = str(args["connection_name"])
 
-        if not isinstance(args.get("poll_sec"), int):
-            raise ValueError("poll_sec 參數必須是整數")
-        if not isinstance(args.get("timeout_sec"), int):
-            raise ValueError("timeout_sec 參數必須是整數")
-
-        self.poll_sec = int(args.get("poll_sec"))
-        self.timeout_sec = int(args.get("timeout_sec"))
+        self.poll_sec = int(args.get("poll_sec", 180))
+        self.timeout_sec = int(args.get("timeout_sec", 3600))
 
         self.connection_id = None
         self.source_id = None
@@ -369,7 +364,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
         last_status = None
 
         # 在開始時取得一次 token
-        token = self.getAccessToken()
+        # token = self.getAccessToken()
         
         while True:
             elapsed = time.time() - start
@@ -382,17 +377,17 @@ class AirbyteExecutionImpl(AirbyteExecution):
             list_jobs_api = f"{self.airbyte_root_api}/jobs/{self.job_id}"
             headers = {
                 "accept": "application/json",
-                "authorization": f"Bearer {token}"
+                "authorization": f"Bearer {self.getAccessToken()}"
             }
             self.logger_main.info(f"正在檢查 job 狀態: {self.job_id}")
             response = requests.get(url=list_jobs_api, headers=headers, timeout=20, verify=False)
            
             # 如果 token 過期，嘗試刷新
-            if response.status_code == 401:
-                self.logger_main.warning(f"Token 過期，刷新 token...")
-                new_token = self.getAccessToken()
-                headers["authorization"] = f"Bearer {new_token}"
-                response = requests.get(url=list_jobs_api, headers=headers, timeout=20, verify=False)
+            # if response.status_code == 401:
+            #     self.logger_main.warning(f"Token 過期，刷新 token...")
+            #     new_token = self.getAccessToken()
+            #     headers["authorization"] = f"Bearer {new_token}"
+            #     response = requests.get(url=list_jobs_api, headers=headers, timeout=20, verify=False)
             
             try:
                 response.raise_for_status()
