@@ -260,8 +260,11 @@ class FtpLoaderImpl(FtpLoader):
         time.sleep(10)
         CleanTempFile.remove_temp_operation_directory(self.temp_operation_folder_path)
         self.logger_main.info("清空暫存目錄完成。") 
-
-        self.close()
+        try:
+            self.close()
+        except Exception as e:
+            self.logger_main.error(f"關閉 FTP/SFTP 連線失敗 {e}")
+            exit(1)
         self.logger_main.info("FTP/SFTP 連線已關閉。")
         return True
 
