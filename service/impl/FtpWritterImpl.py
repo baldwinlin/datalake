@@ -427,15 +427,25 @@ class FtpWritterImpl(FtpWritter):
         """
         # 建立暫存檔
         if (target_encoding != source_encoding):
-            tmp_path = file_path.with_suffix("." + "tmp")
-            tmp_file = open(tmp_path, mode="w", encoding=target_encoding, errors="replace")
+            try:
+                tmp_path = file_path.with_suffix("." + "tmp")
+                tmp_file = open(tmp_path, mode="w", encoding=target_encoding, errors="replace")
+            except Exception as e:
+                self.logger.error(f'[開啟暫存檔失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[開啟暫存檔失敗] {e}")
+                exit(1)
 
         line_cnt = 0
-        with open(file_path, "r", encoding=source_encoding, errors="replace") as src:
-            for line in src:
-                if (target_encoding != source_encoding):
-                    tmp_file.write(line)
-                line_cnt += 1
+        try:
+            with open(file_path, "r", encoding=source_encoding, errors="replace") as src:
+                for line in src:
+                    if (target_encoding != source_encoding):
+                        tmp_file.write(line)
+                    line_cnt += 1
+        except Exception as e:
+            self.logger.error(f'[檔案轉碼失敗] {e}')
+            self.errorHandler.exceptionWriter(f"[檔案轉碼失敗] {e}")
+            exit(1)
 
         # 替換原檔案
         if (target_encoding != source_encoding):
@@ -500,7 +510,12 @@ class FtpWritterImpl(FtpWritter):
             #out_zip_file = out_file + "." + self.zip_type.lower()
             out_zip_file = str(out_file) + "." + self.zip_type.lower()
             self.logger.debug(f"[Compress file] {out_zip_file}")
-            Compressor.compress(str(out_zip_file), filelist, self.zip_sec)
+            try:
+                Compressor.compress(str(out_zip_file), filelist, self.zip_sec)
+            except Exception as e:
+                self.logger.error(f'[壓縮檔案失敗] {e}')
+                self.errorHandler.exceptionWriter(f"[壓縮檔案失敗] {e}")
+                exit(1)
             self.uploadFile(out_zip_file)
         else:
             for upload_file in filelist:
