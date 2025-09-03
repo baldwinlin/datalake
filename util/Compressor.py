@@ -9,7 +9,10 @@ import pyzipper
 class Compressor:
     @staticmethod
     def compress(archive_name, files, password=None):
-        ext = os.path.splitext(archive_name)[1].lower()
+        if archive_name.lower().endswith(".tar.gz"):
+            ext = ".tar.gz"
+        else:
+            ext = os.path.splitext(archive_name)[1].lower()
 
         if ext == ".zip":
             Compressor.compress_zip(archive_name, files, password)
@@ -25,7 +28,10 @@ class Compressor:
 
     @staticmethod
     def decompress(archive_name, extract_path, password=None):
-        ext = os.path.splitext(archive_name)[1].lower()
+        if archive_name.lower().endswith(".tar.gz"):
+            ext = ".tar.gz"
+        else:
+            ext = os.path.splitext(archive_name)[1].lower()
 
         if ext == ".zip":
             return Compressor.decompress_zip(archive_name, extract_path, password)

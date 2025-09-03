@@ -402,9 +402,11 @@ class FtpWritterImpl(FtpWritter):
         filelist = s3SrcDao.listFiles(search_key)
         self.logger.debug(f'[Source file list ] {filelist}')
 
+        download_files = []
         for file in filelist:
             remote_path = self.temp_path / Path(file).name
             self.logger.debug(f"[Download file] {file} -> {remote_path}")
+            download_files.append(remote_path)
             try:
                 s3SrcDao.downloadFile(file, remote_path)
             except Exception as e:
@@ -414,8 +416,7 @@ class FtpWritterImpl(FtpWritter):
             line_cnt = self.convertEncoding(remote_path, self.tg_encoding, self.src_encoding)
             self.logger.info(f'[檔案筆數] {remote_path} : {line_cnt}')
 
-
-        exit()
+        return download_files
 
     def convertEncoding(self, file_path: str, target_encoding: str, source_encoding: str = "utf-8"):
         """
@@ -425,51 +426,26 @@ class FtpWritterImpl(FtpWritter):
         :param source_encoding: 原始檔案編碼 (預設 utf-8)
         """
         # 建立暫存檔
+        if (target_encoding != source_encoding):
+            tmp_path = file_path.with_suffix("." + "tmp")
+            tmp_file = open(tmp_path, mode="w", encoding=target_encoding, errors="replace")
+
         line_cnt = 0
-        dir_name = os.path.dirname(file_path)
-        with tempfile.NamedTemporaryFile(mode="w", encoding=target_encoding, delete=False, dir=dir_name) as tmp_file:
-            tmp_path = tmp_file.name
-            with open(file_path, "r", encoding=source_encoding, errors="replace") as src:
-                for line in src:
-                    if(target_encoding != source_encoding):
-                        tmp_file.write(line)
-                    line_cnt += 1
+        with open(file_path, "r", encoding=source_encoding, errors="replace") as src:
+            for line in src:
+                if (target_encoding != source_encoding):
+                    tmp_file.write(line)
+                line_cnt += 1
 
         # 替換原檔案
         if (target_encoding != source_encoding):
+            tmp_file.close()
             os.replace(tmp_path, file_path)
         return line_cnt
 
-
-    def run(self):
-        self.logger.setLevel(getattr(logging, self.log_level, logging.INFO))
-        self.logger.info("[Run FTP writter]")
-        filelist = []
-        upload_file = None
-        if(self.source_type.lower() == "db"):
-            out_file = self.exportDbFile()
-            upload_file = out_file
-            filelist.append(out_file)
-        elif(self.source_type.lower() == "s3"):
-            filelist = self.getS3Files()
-        else:
-            self.logger.error(f"[Source type未定義]")
-            self.errorHandler.exceptionWriter(f"[Source type未定義]")
-            exit(1)
-
-
-        #print(filelist)
-        out_zip_file = None
-        #Compress data
-        if(self.zip_type):
-            #out_zip_file = out_file + "." + self.zip_type.lower()
-            out_zip_file = out_file.with_suffix("." + self.zip_type.lower())
-            Compressor.compress(out_zip_file, filelist, self.zip_sec)
-            upload_file = out_zip_file
-
-        #Upload file
-        if(self.tg_type.lower() == 'ftp'):
-            #print("FTP: ",self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
+    def uploadFile(self, upload_file):
+        if (self.tg_type.lower() == 'ftp'):
+            # print("FTP: ",self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
             try:
                 ftpDao = FtpDaoImpl(self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
             except Exception as e:
@@ -483,7 +459,7 @@ class FtpWritterImpl(FtpWritter):
                 self.logger.error(f'[FTP上傳失敗] {e}')
                 self.errorHandler.exceptionWriter(f"[FTP上傳失敗] {e}")
                 exit(1)
-        elif(self.tg_type.lower() == 's3'):
+        elif (self.tg_type.lower() == 's3'):
             try:
                 target_path = self.tg_path + Path(upload_file).name
                 try:
@@ -499,5 +475,37 @@ class FtpWritterImpl(FtpWritter):
                 self.logger.error(f'[上傳檔案至S3失敗] {e}')
                 self.errorHandler.exceptionWriter(f"[上傳檔案至S3失敗] {e}")
                 exit(1)
+
+
+    def run(self):
+        self.logger.setLevel(getattr(logging, self.log_level, logging.INFO))
+        self.logger.info("[Run FTP writter]")
+        filelist = []
+        upload_file = None
+        if(self.source_type.lower() == "db"):
+            out_file = self.exportDbFile()
+            upload_file = out_file
+            filelist.append(str(out_file))
+        elif(self.source_type.lower() == "s3"):
+            out_file = self.temp_path / self.replaceArg(self.tg_name_pattern)
+            filelist = self.getS3Files()
+        else:
+            self.logger.error(f"[Source type未定義]")
+            self.errorHandler.exceptionWriter(f"[Source type未定義]")
+            exit(1)
+
+
+        #Compress data and upload files
+        if(self.zip_type):
+            #out_zip_file = out_file + "." + self.zip_type.lower()
+            out_zip_file = str(out_file) + "." + self.zip_type.lower()
+            self.logger.debug(f"[Compress file] {out_zip_file}")
+            Compressor.compress(str(out_zip_file), filelist, self.zip_sec)
+            self.uploadFile(out_zip_file)
+        else:
+            for upload_file in filelist:
+                self.uploadFile(upload_file)
+
+
 
 
