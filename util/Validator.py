@@ -1,12 +1,13 @@
 from typing import Optional
 from util.FilenameProcessor import FilenameProcessor
+from util.Reformatter import Reformatter
 import os
 # import re
 
 class Validator:
 
     @staticmethod
-    def get_file_line_count(file_name:str, file_path:str, controller_file_delimiter:Optional[str] = None, controller_file_name_pattern:Optional[str] = None):
+    def get_file_line_count(file_name:str, file_path:str, header_line:str, controller_file_delimiter:Optional[str] = None, controller_file_name_pattern:Optional[str] = None, header:Optional[str] = None):
         if FilenameProcessor._match_name_pattern(file_name, controller_file_name_pattern): 
             controller_file_path = os.path.join(file_path, file_name)
             expected_records = Validator._read_controller_file(controller_file_path, controller_file_delimiter)
@@ -15,6 +16,8 @@ class Validator:
             file_path = os.path.join(file_path, file_name)
             with open(file_path, "rb") as f:
                 downloaded_lines_count = len(f.readlines())
+            if header_line == "Y":
+                downloaded_lines_count -= 1
             return ("檔案", file_name, downloaded_lines_count)
     
     @staticmethod
@@ -42,7 +45,7 @@ class Validator:
             raise Exception(f"讀取設定檔失敗 {controller_file_path}: {e}")
     
     @staticmethod
-    def check_file_line_count(file_rows_counts_info: list[str], header: str):
+    def check_file_line_count(file_rows_counts_info: list[str]):
         total_rows_count = 0
         controller_rows_count = 0
         file_counts = 0
@@ -53,10 +56,6 @@ class Validator:
             elif kind == "檢核檔":
                 controller_rows_count = rows_count
         
-        if header == "Y":
-            if file_counts != 0:
-                total_rows_count -= file_counts
-        
         if controller_rows_count == 0:
             raise Exception("設定檔無讀到資料")
         
@@ -64,7 +63,6 @@ class Validator:
             raise Exception(f" 檔案行數不符，預期筆數：{controller_rows_count}，實際筆數：{total_rows_count}")
         
         return True
-
 
     @staticmethod
     def check_header_batch_date(header_file_path: str, delimiter: str, batch_date: str):
@@ -83,8 +81,39 @@ class Validator:
             else:
                 raise Exception(f"設定檔日期不符，預期日期：{batch_date}，實際日期：{content[:8]}")
 
+    @staticmethod
+    def checking_decoding(file_path: str, decoding: str):
+        with open(file_path, "rb") as f:
+            original_content = f.read()
+       
+        original_lines = Reformatter._split_content_with_row_lists(original_content)
+        problematic_lines = []
+        for index, (line, _ ) in enumerate(original_lines):
+            try:
+                line.decode(decoding, errors = "strict")
+            except UnicodeDecodeError:
+                problematic_lines.append(index)
+        return problematic_lines    
 
+    @staticmethod
+    def checking_row_length(file_path: str, col_size_file: str):
+        col_sizes = Reformatter._read_sizes_file(col_size_file, encoding = "utf-8")
+        total_row_size = sum(col_sizes)
+        
+        # 直接讀取原始 byte 內容來檢查長度，而不是解碼後的字串長度
+        with open(file_path, "rb") as f:
+            content_bytes = f.read()
+        
+        lines = Reformatter._split_content_with_row_lists(content_bytes)
 
+        error_lines = []
+        for index, (line, _ ) in enumerate(lines):
+            if len(line) != total_row_size:
+                error_lines.append(index +1 )
+        if len(error_lines) >0 :
+            return error_lines
+        else:
+            return True
 
 
 if __name__ == "__main__":
