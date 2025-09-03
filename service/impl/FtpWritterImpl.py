@@ -462,7 +462,8 @@ class FtpWritterImpl(FtpWritter):
         out_zip_file = None
         #Compress data
         if(self.zip_type):
-            out_zip_file = out_file + "." + self.zip_type.lower()
+            #out_zip_file = out_file + "." + self.zip_type.lower()
+            out_zip_file = out_file.with_suffix("." + self.zip_type.lower())
             Compressor.compress(out_zip_file, filelist, self.zip_sec)
             upload_file = out_zip_file
 
