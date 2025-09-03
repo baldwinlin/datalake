@@ -1,5 +1,3 @@
-# from cgitb import reset
-# from curses import endwin
 from typing import Optional
 
 class Reformatter:
@@ -12,20 +10,6 @@ class Reformatter:
         errors_handling = "replace"
         decoded_content = content.decode(decoding, errors_handling)
         return decoded_content
-
-    @staticmethod
-    def checking_decoding_valid(file_path: str, decoding: str):
-        with open(file_path, "rb") as f:
-            original_content = f.read()
-       
-        original_lines = Reformatter._split_content_with_row_lists(original_content)
-        problematic_lines = []
-        for index, (line, _ ) in enumerate(original_lines):
-            try:
-                line.decode(decoding, errors = "strict")
-            except UnicodeDecodeError:
-                problematic_lines.append(index + 1)
-        return problematic_lines    
             
 
     @staticmethod
@@ -42,25 +26,6 @@ class Reformatter:
         with open(temp_upload_path, "w", encoding="utf-8") as f:
             f.write(decoded_content)
 
-    @staticmethod
-    def checking_file_valid(file_path: str, col_size_file: str, encoding: str):
-        col_sizes = Reformatter._read_sizes_file(col_size_file, encoding = "utf-8")
-        total_row_size = sum(col_sizes)
-        
-        # 直接讀取原始 byte 內容來檢查長度，而不是解碼後的字串長度
-        with open(file_path, "rb") as f:
-            content_bytes = f.read()
-        
-        lines = Reformatter._split_content_with_row_lists(content_bytes)
-
-        error_lines = []
-        for index, (line, _ ) in enumerate(lines):
-            if len(line) != total_row_size:
-                error_lines.append(index)
-        if len(error_lines) >0 :
-            return error_lines
-        
-        return True
 
     @staticmethod
     def insert_delimiter_with_sizes_file(file_path: str, col_size_file: str, temp_upload_path: str):
