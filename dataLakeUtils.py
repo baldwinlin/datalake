@@ -53,7 +53,6 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
     if(fun == 'FL'):
         logger_main.info("Run FTP Loader")
         try:
-            fc_args = json.loads(fc_args)
             service = FtpLoaderImpl(main_config, fc_config, pc_config, fc_args)
         except Exception as e:
             logger_main.error(f"建立FtpLoaderImpl錯誤 {e}")

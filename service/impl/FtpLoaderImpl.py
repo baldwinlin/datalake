@@ -13,6 +13,7 @@ Output          :
 Modify          :
 '''
 import logging
+from stat import filemode
 from logger import Logger
 import datetime
 
@@ -30,98 +31,42 @@ from dao.impl.S3DaoImpl import S3DaoImpl
 import os
 import shutil
 import time
-
+import json
 
 class FtpLoaderImpl(FtpLoader):
-    def __init__(self,main_config, config, args):
-        self.config = config
-        self.args = args
-
-        """設定 FTP 和 SFTP 共有 attribution"""
-        self.host = config['FTP']['FTP_IP']
-        self.port = int(config['FTP']['FTP_PORT'])
-        self.user = config['FTP']['FTP_USER']
-        #測試時需要解開註解
-        self.sec = config['FTP']['FTP_SEC']
-        self.ftp_type = config['FTP']['FTP_TYPE']
-        #正式環境 正式執行需解開註解
-        # self.ftp_sec_file = config['FTP']['FTP_SEC_FILE']
-        # self.ftp_key_file = config['FTP']['FTP_SEC_KEY']
-        # self.user, self.sec_str = readSecFile(self.ftp_sec_file)
-        # self.ftp_salt = readSaltFile(self.ftp_key_file)
-        # self.sec = get_gpg_decrypt(self.sec_str, self.ftp_salt)
-
-        """S3 相關參數"""
-        self.s3_host = config['S3']['HOST']
-        self.s3_port = config['S3']['PORT']
-        self.s3_bucket = config['S3']['BUCKET']
-        #測試時需要解開註解
-        self.s3_user = config['S3']['ASSESS_ID_FILE']
-        self.s3_sec = config['S3']['ASSESS_KEY_FILE']
-        #正式環境 正式執行需解開註解
-        # self.s3_assess_id_file = config['S3']['ASSESS_ID_FILE']
-        # self.s3_assess_key_file = config['S3']['ASSESS_KEY_FILE']
-        # self.s3_user, self.s3_sec_str = readSecFile(self.s3_assess_id_file)
-        # self.s3_salt = readSaltFile(self.s3_assess_key_file)
-        # self.s3_sec = get_gpg_decrypt(self.s3_sec_str, self.s3_salt)
-
-        """ FILE 相關參數"""
-        self.source_path = config['FILE']['SOURCE_PATH']
-        self.target_path = config['FILE']['TARGET_PATH']
-        self.name_pattern = config['FILE']['NAME_PATTERN']
-        self.encoding = config['FILE']["ENCODING"]
-        self.header = config['FILE']['HEADER']
-        #置換參數
-        self.date = str(args.get('date'))
-
-        """是否需要分隔欄寬"""
-        self.delimiter = config['FILE']['DELIMITER']
-        if self.delimiter == "":
-            self.col_size_file = config['FILE']['COL_SIZE_FILE']
-        else:
-            self.col_size_file = "N"
-
-        """ CONTROLLER 相關參數，檢查檔案行數"""
-        self.controller_file = config['CONTROLLER']['CONTROLLER_FILE']
-        if self.controller_file == "Y":
-            self.controller_file_name_pattern = config['CONTROLLER']['CONTROLLER_FILE_NAME_PATTERN']
-            self.controller_file_delimiter = config['CONTROLLER']['CONTROLLER_FILE_DELIMITER']
-        else:
-            self.controller_file_name_pattern = None
-            self.controller_file_delimiter = None
-        self.controller_file_rows_count = None
-
-        """檢查檔案行數與單筆寬度"""
+    def __init__(self,main_config, fc_config, pc_config, args):
+        self.fc_config = fc_config
+        self.pc_config = pc_config
+        self.main_config = main_config
+        self.args = json.loads(args)
+        self.date = str(self.args.get('date'))
+        self.logger_main = None
+        self.log_level = self.main_config["LOG"].get("LOG_LEVEL", "INFO").upper()
         self.expected_row_length = 0
         self.total_rows_count = 0
+        self.controller_file_rows_count = 0
 
-        """ZIP 相關參數"""
-        self.zip_type = config['ZIP']['ZIP_TYPE']
-        #測試時需要解開註解
-        self.zip_sec = config['ZIP']['SEC']
-        #正式環境 正式執行需解開註解
-        # self.zip_sec_file = config['ZIP']['SEC_FILE']
-        # self.zip_key_file = config['ZIP']['KEY_FILE']
-        # self.zip_user, self.zip_sec_str = readSecFile(self.zip_sec_file)
-        # self.zip_salt = readSaltFile(self.zip_key_file)
-        # self.zip_sec = get_gpg_decrypt(self.zip_sec_str, self.zip_salt)
+        """建立暫存工作目錄"""
+        try:
+            temp_path = self.main_config.get('LOG','TEMP_BASE_PATH')
+            self.temp_operation_folder_name= self.pc_config['SOURCE']["WORK_SUB_DIR"]
+            self.temp_operation_folder_path = os.path.join(temp_path, self.temp_operation_folder_name)
+        except Exception as e:
+            raise Exception(f"讀取TEMP path錯誤: {e}")
+        if os.path.exists(self.temp_operation_folder_path):
+            try:
+                CleanTempFile.remove_temp_operation_directory(self.temp_operation_folder_path)
+            except Exception as e:
+                raise Exception(f"刪除暫存目錄時發生錯誤: {e}")
+        try:
+            if not os.path.exists(self.temp_operation_folder_path):
+                os.makedirs(self.temp_operation_folder_path)  # 建立此次執行時的資料夾
+            self.temp_download_path = os.path.join(self.temp_operation_folder_path, "downloads")
+            self.temp_processing_path = os.path.join(self.temp_operation_folder_path, "processing")
+            self.temp_upload_path = os.path.join(self.temp_operation_folder_path, "uploads")
+        except Exception as e:
+            raise Exception(f"建立暫存目錄時發生錯誤: {e}")
 
-        """檔案暫存區"""
-        self.temp_base_path = config['TEMP']["TEMP_BASE_PATH"]
-        self.temp_operation_folder_name= config['TEMP']["TEMP_OPERATION_FOLDER_NAME"]
-        self.temp_operation_folder_path = os.path.join(self.temp_base_path, self.temp_operation_folder_name)
-        
-        """初始化清空此次運作的暫存資料夾，避免 debug 結束後，資料夾的內容存在，導致影響執行結果"""
-        CleanTempFile.remove_temp_operation_directory(self.temp_operation_folder_path)
-        time.sleep(3)
-        
-        """建立此次執行時的資料夾"""
-        if not os.path.exists(self.temp_operation_folder_path):
-            os.makedirs(self.temp_operation_folder_path)  # 建立此次執行時的資料夾
-        self.temp_download_path = os.path.join(self.temp_operation_folder_path, "downloads")
-        self.temp_processing_path = os.path.join(self.temp_operation_folder_path, "processing")
-        self.temp_upload_path = os.path.join(self.temp_operation_folder_path, "uploads")
-        
         if not os.path.exists(self.temp_download_path):
             os.makedirs(self.temp_download_path)
         if not os.path.exists(self.temp_processing_path):
@@ -129,35 +74,116 @@ class FtpLoaderImpl(FtpLoader):
         if not os.path.exists(self.temp_upload_path):
             os.makedirs(self.temp_upload_path)
 
-        """logger 變數"""
-        self.main_config = main_config
-        self.logger_main = None
-        self.log_level = self.main_config["LOG"].get("LOG_LEVEL", "INFO").upper()
+        """設定Ftp連線參數"""
+        try:
+            self.host = self.fc_config.get('FTP','FTP_IP')
+            self.port = int(self.fc_config.get('FTP','FTP_PORT'))
+            self.ftp_type = self.fc_config.get('FTP','FTP_TYPE')
+            #測試時需要解開註解
+            self.user = self.fc_config.get('FTP','FTP_USER')
+            self.sec = self.fc_config.get('FTP','FTP_SEC')
+            #正式環境 正式執行需解開註解
+            # self.ftp_sec_file = self.fc_config.get('FTP','FTP_SEC_FILE')
+            # self.ftp_key_file = self.fc_config.get('FTP','FTP_SEC_KEY')
+            # self.user, self.sec_str = readSecFile(self.ftp_sec_file)
+            # self.ftp_salt = readSaltFile(self.ftp_key_file)
+            # self.sec = get_gpg_decrypt(self.sec_str, self.ftp_salt)
+        except Exception as e:
+            raise Exception(f"讀取FTP config錯誤: {e}")
 
-        
-        self.ftp_dao = FtpDaoImpl(
-            ftp_type=self.ftp_type, 
-            host=self.host, 
-            port=self.port, 
-            user=self.user, 
-            sec=self.sec,
-            logger=None)  # 暫時設為 None，等 logger 初始化後再更新
-        
+        # try:
+        #     self.s3_host = self.fc_config.get('S3','HOST')
+        #     self.s3_port = self.fc_config.get('S3','PORT')
+        #     self.s3_assess_id_file = self.fc_config.get('S3','ASSESS_ID_FILE')
+        #     self.s3_assess_key_file = self.fc_config.get('S3','ASSESS_KEY_FILE')
+        #     self.s3_user, self.s3_sec_str = readSecFile(self.s3_assess_id_file)
+        #     self.s3_salt = readSaltFile(self.s3_assess_key_file)
+        #     self.s3_sec = get_gpg_decrypt(self.s3_sec_str, self.s3_salt)
+        # except Exception as e:
+        #     raise Exception(f"讀取S3 config錯誤: {e}")
 
+        """來源檔案資料處理"""
+        try:
+            self.source_path = self.pc_config.get('SOURCE','PATH')
+            self.name_pattern = self.pc_config.get('SOURCE','NAME_PATTERN')
+            self.encoding = self.pc_config.get('SOURCE',"ENCODING")
+            if self.encoding == "":
+                raise Exception("ENCODING 不得為空值")
+            self.header = self.pc_config.get('SOURCE','HEADER')
+            if self.header not in ["Y", "N"]:
+                raise Exception("HEADER 設定只接受 Y,N 設定值")
+            
+            #檔案分隔處理
+            self.delimiter = self.pc_config.get('SOURCE','DELIMITER')
+            self.col_size_file = self.pc_config.get('SOURCE','COL_SIZE_FILE')
+            if self.col_size_file:
+                if os.path.exists(self.col_size_file):
+                    pass
+                else:
+                    raise Exception(f"COL_SIZE_FILE 檔案不存在 {self.col_size_file}")
+            
+            #控制檔讀取處理
+            self.controller_file = self.pc_config.get('SOURCE','CTL_FILE')
+            if self.controller_file not in ["Y", "N"]:
+                raise Exception("CTL_FILE 設定只接受 Y,N 設定值")
+            if self.controller_file == "Y":
+                self.controller_file_name_pattern = self.pc_config.get('SOURCE','CTL_FILE_NAME_PATTERN')
+                self.controller_file_delimiter = self.pc_config.get('SOURCE','CTL_FILE_DELIMITER')
+                if self.controller_file_delimiter == "":
+                    self.controller_file_delimiter = None
+            else:
+                self.controller_file_name_pattern = None
+                self.controller_file_delimiter = None
+        except Exception as e:
+            raise Exception(f"讀取SOURCE config錯誤: {e}")
+        
+        """目標檔案資料位置"""
+        try:
+            self.s3_bucket = self.pc_config.get('TARGET','S3_BUCKET')
+            self.target_path = self.pc_config.get('TARGET','PATH')
+        except Exception as e:
+            raise Exception(f"讀取TARGET config錯誤: {e}")
+
+        """設定解壓縮處理"""
+        try:
+            self.zip_type = self.pc_config.get('ZIP','ZIP_TYPE')
+            self.zip_sec_file = self.pc_config.get('ZIP','ZIP_SEC_FILE')
+            self.zip_key_file = self.pc_config.get('ZIP','ZIP_SEC_KEY_FILE')
+            self.zip_user, self.zip_sec_str = readSecFile(self.zip_sec_file)
+            self.zip_salt = readSaltFile(self.zip_key_file)
+            self.zip_sec = get_gpg_decrypt(self.zip_sec_str, self.zip_salt)
+            # self.zip_sec ="123456"
+        except Exception as e:
+            raise Exception(f"讀取ZIP config錯誤: {e}")
+        
+        try:
+            self.ftp_dao = FtpDaoImpl(
+                ftp_type=self.ftp_type, 
+                host=self.host, 
+                port=self.port, 
+                user=self.user, 
+                sec=self.sec,
+                logger=None)  # 暫時設為 None，等 logger 初始化後再更新
+        except Exception as e:
+            raise Exception(f"建立FTP DAO時發生錯誤: {e}")
+        
     def _initialize_logger(self):
         log_config = self.main_config
         ftp_log_path = f"{log_config['LOG']['LOG_PATH']}/ftp_loader"
         
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        processed_name_pattern = self.ftp_dao._process_name_pattern(self.name_pattern, self.date)
+        try:
+            processed_name_pattern = FilenameProcessor._process_name_pattern(self.name_pattern, self.date)
+        except Exception as e:
+            raise Exception(f"建立LOG發生錯誤: {e}")
+        
         logger_file_name = f"{processed_name_pattern}_{timestamp}"
-
         Logger.Logger(ftp_log_path, logger_file_name)
         self.logger_main = logging.getLogger(logger_file_name)
         self.ftp_dao.logger = self.logger_main # 更新 ftp_dao 的 logger
 
     def run(self):
-        """ 執行連線和建立 logger """
+        """ 建立 logger """
         self._initialize_logger()
         self.logger_main.info("連線 FTP/SFTP Server 完成。")
         self.logger_main.setLevel(getattr(logging, self.log_level, logging.INFO))
@@ -175,7 +201,7 @@ class FtpLoaderImpl(FtpLoader):
         self.logger_main.info(f"完成下載檔案至暫存區: {download_files_list}")
         
 
-        """如果下載的檔案是壓縮檔先解壓縮"""
+        """壓縮檔解壓縮"""
         if self.name_pattern.lower().endswith((".zip", ".7z", ".tar", ".gz", ".tgz", ".tar.gz")):
             unzip_files_list  = self.unzipFile(download_files_list)
             download_files_list = unzip_files_list 
@@ -185,39 +211,45 @@ class FtpLoaderImpl(FtpLoader):
                 shutil.copy(os.path.join(self.temp_download_path, file_name), os.path.join(self.temp_processing_path, file_name))
             self.logger_main.info(f"檔案暫存至處理區，檔案列表: {download_files_list}")
         
-
-        """檢查設定檔設置的 Batch Date"""
+        """驗證控制檔日期"""
         if self.controller_file == "Y":
             controller_file_name = self.checkBatchDate(download_files_list)
-            self.logger_main.info(f"設定檔日期檢查 {controller_file_name} 配置正確")
+            self.logger_main.info(f"控制檔日期檢查 {controller_file_name} 配置正確")
 
-        """驗證檔案下載後行數是否正確，或是紀錄下載後的總數"""
+        """驗證下載檔案行數"""
         self.checkFileRows(download_files_list)
         
-        """過濾掉設定檔，設定檔不需要進入 Reformat 流程和上傳至 S3"""
+        """過濾掉控制檔"""
         processing_files_list = self.filteFIles(download_files_list)
         self.logger_main.info(f"需轉換的檔案列表: {processing_files_list}")
 
-        """檢查檔案是否可以正常解碼，並且記錄有問題的檔案名稱跟行位置"""
+        """解碼驗證"""
         result = self.checkDecodeValid(processing_files_list)
         if result == True:
             self.logger_main.info(f"檔案編碼檢查完成，檔案列表: {processing_files_list}")
 
-        """移除 header，避免影響檔案行數檢查，檔案保存於 temp_processing_file_path"""
+        """移除欄位標題"""
         if self.header == "Y":
             result = self.removeHeaderLine(processing_files_list)
             if result == True:
                 self.logger_main.info(f"完成移除欄位標題行")
        
-
-        """有配置COL_SIZE_FILE 需要確認檔案資料是否都是正確的"""
-        if self.col_size_file != "N":
+        """檔案資料長度檢查（固定長度檔案）"""
+        if self.col_size_file:
             result = self.checkRowsLength(processing_files_list)
             if result is True:
                 self.logger_main.info(f"驗證每筆資料長度完成，開始插入分隔符號")
-    
 
-        #開始進行檔案分隔跟轉碼
+        """檔案分隔跟轉碼"""
+        if self.col_size_file:
+            if self.delimiter:
+                self.logger_main.info(f"指定使用分隔符號{self.delimiter}進行固定欄位寬度檔案分隔")
+            else:
+                self.delimiter = ","
+                self.logger_main.info(f"無指定使用的分隔符號，預設{self.delimiter}進行固定欄位寬度檔案分隔")
+        else:
+            self.logger_main.info(f"無指定COL_SIZE_FILE，不需要插入分隔符號")
+        
         reformated_files_list = []
         error_files_list = []
         for file_name in processing_files_list:
@@ -233,33 +265,29 @@ class FtpLoaderImpl(FtpLoader):
             exit(1)
         self.logger_main.info(f"檔案轉換完成，轉換後的檔案列表: {reformated_files_list}")
 
-       
-        #檢查轉換後的檔案行數 
-        self.total_rows_count = 0
-        for file_name in reformated_files_list:
-            result = Validator.get_file_line_count(file_name, self.temp_upload_path, header_line="N", controller_file_delimiter = None, controller_file_name_pattern = None)
-            self.total_rows_count += result[2]
-        
+        """檔案行數最終檢查"""
         self.finalCheck(reformated_files_list)
         self.logger_main.info(f"轉換後的檔案行數檢查完成，轉換後的檔案行數總和: {self.total_rows_count}")
 
      
         """上傳檔案到S3"""
-        error_upload_files_list = []
-        for file_name in reformated_files_list:
-            try:
-                self.writeToS3(file_name)
-            except Exception as e:
-                self.logger_main.error(f"上傳檔案失敗 {e}")
-                error_upload_files_list.append(file_name)
+        # error_upload_files_list = []
+        # for file_name in reformated_files_list:
+        #     try:
+        #         self.writeToS3(file_name)
+        #     except Exception as e:
+        #         self.logger_main.error(f"上傳檔案失敗 {e}")
+        #         error_upload_files_list.append(file_name)
         
-        if len(error_upload_files_list) > 0:
-            self.logger_main.error(f"上傳檔案失敗錯誤表 {error_upload_files_list}")
-            exit(1)
+        # if len(error_upload_files_list) > 0:
+        #     self.logger_main.error(f"上傳檔案失敗錯誤表 {error_upload_files_list}")
+        #     exit(1)
 
-        time.sleep(10)
-        CleanTempFile.remove_temp_operation_directory(self.temp_operation_folder_path)
-        self.logger_main.info("清空暫存目錄完成。") 
+        # time.sleep(10)
+        # CleanTempFile.remove_temp_operation_directory(self.temp_operation_folder_path)
+        # self.logger_main.info("清空暫存目錄完成。") 
+        
+        """FTP/SFTP 連線關閉"""
         try:
             self.close()
         except Exception as e:
@@ -340,7 +368,7 @@ class FtpLoaderImpl(FtpLoader):
                 exit(1)
         self.logger_main.info(f"檔案行數檢查完成，下載檔案行數紀錄：{file_rows_counts_info}")
 
-        """檢查檔案行數是否符合設定檔設置的筆數"""
+        """檢查檔案行數是否符合控制檔設置的筆數"""
         if self.controller_file == "Y":
             try:
                 result = Validator.check_file_line_count(file_rows_counts_info)
@@ -348,7 +376,7 @@ class FtpLoaderImpl(FtpLoader):
                 self.logger_main.error(f"檔案行數檢查失敗 {e}")
                 exit(1)
             if result == True:
-                self.logger_main.info("核對明細檔和設定檔筆數正確")
+                self.logger_main.info("核對明細檔和控制檔筆數正確")
         elif self.controller_file == 'N':
             for kind, fname, rows_count in file_rows_counts_info:
                 self.total_rows_count += rows_count
@@ -378,7 +406,7 @@ class FtpLoaderImpl(FtpLoader):
                 file_path = os.path.join(self.temp_processing_path, file_name)
                 problematic_lines = Validator.checking_decoding(file_path, self.encoding)
                 if len(problematic_lines) > 0:
-                    self.logger_main.error(f"檔案 {file_name} 有 {len(problematic_lines)} 行資料有解碼問題，標題欄位是第0行，請根據以下行數檢查資料 {problematic_lines} ")
+                    self.logger_main.error(f"檔案 {file_name} 有 {len(problematic_lines)} 行資料有解碼問題，標題欄位是第0行，請根據以下行數檢查資料{problematic_lines} ")
                     problematic_files_list.append(file_name)
             except Exception as e:
                 self.logger_main.error(f"檢查檔案編碼失敗 {file_name} {e}")
@@ -439,15 +467,13 @@ class FtpLoaderImpl(FtpLoader):
         temp_upload_file_path = os.path.join(self.temp_upload_path, file)
 
         """檢查檔案是否已經為已經有分隔符號的檔案，如果是則不需要插入分隔符號，檔案暫存於 temp_processing_file_path"""
-        if self.delimiter != "":
-            self.logger_main.info(f"{file} 已經有分隔符號，不需要插入分隔符號")
-
-        elif self.col_size_file != "N":  #代表一定有長度檔，需要進行檔案分隔
+        if self.col_size_file and self.delimiter:
             try:
-                Reformatter.insert_delimiter_with_sizes_file(temp_processing_file_path, self.col_size_file, temp_processing_file_path,)
+                Reformatter.insert_delimiter_with_sizes_file(temp_processing_file_path, self.col_size_file, temp_processing_file_path, self.delimiter)
             except Exception as e:
                 raise Exception(f"插入分隔符號 {file} 失敗: {e}")
             self.logger_main.info(f"{file} 插入分隔符號完成")
+        
 
         """轉換編碼為 utf-8"""
         if self.encoding == "big5":
@@ -466,7 +492,7 @@ class FtpLoaderImpl(FtpLoader):
         shutil.copy(temp_processing_file_path, temp_upload_file_path)
 
     def finalCheck(self, reformated_files_list):
-        """檢查檔案行數是否符合設定檔設置的筆數"""
+        """檢查檔案行數是否符合控制檔設置的筆數"""
         error_files_list = []
         final_total_rows_count = 0
         for file_name in reformated_files_list:
@@ -491,7 +517,6 @@ class FtpLoaderImpl(FtpLoader):
                 exit(1)
         self.total_rows_count = final_total_rows_count
     
-
     def writeToS3(self, file):
         file_path = os.path.join(self.temp_upload_path, file)
         s3_file_path = os.path.join(self.target_path, file)
@@ -499,7 +524,7 @@ class FtpLoaderImpl(FtpLoader):
         try:
             s3Dao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
             s3Dao.uploadFile(file_path, s3_file_path)
-            uploaded_file = s3Dao.listFiles(file)
+            uploaded_file = s3Dao.listFiles(f"*{file}")
         except Exception as e:
             raise Exception(f"上傳檔案 {file} 失敗: {e}")
             
