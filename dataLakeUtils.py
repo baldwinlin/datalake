@@ -47,14 +47,14 @@ def readConfig(config_file):
     pass
 
 
-def run(fun, main_config, config, fc_args, sql_file):
+def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
 
     print("")
     if(fun == 'FL'):
         logger_main.info("Run FTP Loader")
         try:
             fc_args = json.loads(fc_args)
-            service = FtpLoaderImpl(main_config, config, fc_args)
+            service = FtpLoaderImpl(main_config, fc_config, pc_config, fc_args)
         except Exception as e:
             logger_main.error(f"建立FtpLoaderImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"建立FtpLoaderImpl錯誤 {e}")
@@ -68,7 +68,7 @@ def run(fun, main_config, config, fc_args, sql_file):
     elif(fun == 'FW'):
         logger_main.info("Run FTP Writter")
         try:
-            ftp_writter = FtpWritterImpl(main_config, config, fc_args, sql_file)
+            ftp_writter = FtpWritterImpl(main_config, fc_config, pc_config, fc_args, sql_file)
         except Exception as e:
             logger_main.error(f"FtpWritterImpl {e}")
             errorHandler.exceptionWriter(f"FtpWritterImpl {e}")
@@ -81,7 +81,7 @@ def run(fun, main_config, config, fc_args, sql_file):
     elif(fun == 'SQL'):
         logger_main.info("Run SQL Exception")
         try:
-            sql_execution = SqlExecutionImpl(main_config, config, fc_args, sql_file)
+            sql_execution = SqlExecutionImpl(main_config, fc_config, fc_args, sql_file)
         except Exception as e:
             logger_main.error(f"建立SqlExecutionImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"建立SqlExecutionImpl錯誤 {e}")
@@ -95,7 +95,7 @@ def run(fun, main_config, config, fc_args, sql_file):
     elif(fun == 'DBT'):
         logger_main.info("Run DBT Execution")
         try:
-            dbt_execution = DbtExecutionImpl(main_config, config, fc_args)
+            dbt_execution = DbtExecutionImpl(main_config, fc_config, fc_args)
         except Exception as e:
             logger_main.error(f"建立DbtExecutionImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"建立DbtExecutionImpl錯誤 {e}")
@@ -112,7 +112,7 @@ def run(fun, main_config, config, fc_args, sql_file):
     elif(fun == 'AIB'):
         logger_main.info("Run Airbyte Execution")
         try:
-            airbyte_execution = AirbyteExecutionImpl(main_config, config, fc_args)
+            airbyte_execution = AirbyteExecutionImpl(main_config, fc_config, fc_args)
         except Exception as e:
             logger_main.error(f"建立AirbyteExecutionImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"建立AirbyteExecutionImpl錯誤 {e}")
@@ -129,7 +129,7 @@ def run(fun, main_config, config, fc_args, sql_file):
     elif(fun == 'AIC'):
         logger_main.info("Run Airbyte Cancel Forced")
         try:
-            airbyte_cancel = AirbyteCancelForcedImpl(main_config, config, fc_args)
+            airbyte_cancel = AirbyteCancelForcedImpl(main_config, fc_config, fc_args)
         except Exception as e:
             logger_main.error(f"建立AirbyteCancelForcedImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"建立AirbyteCancelForcedImpl錯誤 {e}")
@@ -158,6 +158,7 @@ if __name__ == '__main__':
     parser.add_argument("--fc", required=True, help="Function config file")
     parser.add_argument("--args", help="Arguments string")
     parser.add_argument("--sqlfile", help="SQL file path")
+    parser.add_argument("--pc", help="Process config file")
 
     # 解析參數
     args = parser.parse_args()
@@ -167,6 +168,7 @@ if __name__ == '__main__':
     function_config_file = args.fc
     fc_args = args.args
     sql_file = args.sqlfile
+    process_confif_file = args.pc
 
     #判斷檔案是否存在
     if not os.path.exists(main_confg_file):
@@ -184,6 +186,14 @@ if __name__ == '__main__':
     fc_config = configparser.ConfigParser()
     fc_config.read(function_config_file)
 
+    # 建立 fuction ConfigParser
+    if(process_confif_file):
+        pc_config = configparser.ConfigParser()
+        pc_config.read(process_confif_file)
+        print("process config created.")
+    else:
+        pc_config = None
+
     # 創建兩個 Logger 實例
     Logger.Logger(main_config['LOG']['LOG_PATH'], main_config['LOG']['LOG_NAME'])  # 主要日誌
     Logger.Logger(main_config['LOG']['LOG_PATH'], main_config['LOG']['ERROR_HANDLER'])  # 錯誤日誌
@@ -194,5 +204,5 @@ if __name__ == '__main__':
     # 創建錯誤處理器
     errorHandler = dataLakeUtilsErrorHandler(main_config['LOG']['ERROR_HANDLER'])
 
-    run(fun, main_config, fc_config, fc_args, sql_file)
+    run(fun, main_config, fc_config, pc_config, fc_args, sql_file)
 

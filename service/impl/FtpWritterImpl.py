@@ -42,7 +42,7 @@ import jaydebeapi
 
 class FtpWritterImpl(FtpWritter):
 
-    def __init__(self, main_config, fc_config, args, sql_file):
+    def __init__(self, main_config, fc_config, pc_config, args, sql_file):
         self.fc_config = fc_config
         self.main_config = main_config
         self.args_str = args
