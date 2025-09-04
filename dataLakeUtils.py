@@ -190,7 +190,6 @@ if __name__ == '__main__':
     if(process_confif_file):
         pc_config = configparser.ConfigParser()
         pc_config.read(process_confif_file)
-        print("process config created.")
     else:
         pc_config = None
 

@@ -59,22 +59,13 @@ class FtpWritterImpl(FtpWritter):
         except Exception as e:
             raise Exception(f"[讀取TEMP path錯誤] {e}")
 
-        #create logger
-        try:
-            self.log_path = self.main_config.get('LOG','LOG_PATH')
-            self.log_name = ""
-        except Exception as e:
-            raise Exception(f"[讀取LOG path錯誤] {e}")
-        self.logger = self.createLog()
-
         try:
             self.driver_path = self.main_config.get('DB_DRIVER','DRIVER_PATH')
         except Exception as e:
             raise Exception(f"[讀取DB dreiver path錯誤] {e}")
 
-
         #確認資料來源S3 or Hive
-        self.source_type = fc_config.get('SOURCE', 'TYPE', fallback='')
+        self.source_type = pc_config.get('SOURCE', 'TYPE', fallback='')
         if not self.source_type:
             raise Exception(f"functional config[SOURCE][TYPE]不存在")
         elif(self.source_type.lower() == 'db'):
@@ -96,7 +87,6 @@ class FtpWritterImpl(FtpWritter):
             try:
                 self.s3_host = fc_config.get('S3', 'HOST')
                 self.s3_port = fc_config.get('S3', 'PORT')
-                self.s3_bucket = fc_config.get('S3', 'BUCKET')
                 self.s3_sec_file = fc_config.get('S3', 'ASSESS_ID_FILE')
                 self.s3_key_file = fc_config.get('S3', 'ASSESS_KEY_FILE')
                 self.s3_user, self.s3_sec_str = readSecFile(self.s3_sec_file)
@@ -104,15 +94,16 @@ class FtpWritterImpl(FtpWritter):
                 self.s3_sec = get_gpg_decrypt(self.s3_sec_str, self.s3_salt)
             except Exception as e:
                 raise Exception(f"[讀取S3 config錯誤] {e}")
-            self.src_path = fc_config.get('SOURCE', 'PATH', fallback=None)
-            self.src_encoding = fc_config.get('SOURCE', 'ENCODING', fallback=None)
-            self.src_name_pattern = fc_config.get('SOURCE', 'NAME_PATTERN', fallback=None)
+            self.src_path = pc_config.get('SOURCE', 'PATH', fallback=None)
+            self.src_bucket = pc_config.get('SOURCE', 'BUCKET', fallback=None)
+            self.src_encoding = pc_config.get('SOURCE', 'ENCODING', fallback=None)
+            self.src_name_pattern = pc_config.get('SOURCE', 'NAME_PATTERN', fallback=None)
         else:
             raise Exception(f"[Source type {self.source_type} 未定義]")
 
         #確認資料目的 FTP or S3
-        self.target_type = fc_config.get('TARGET', 'TYPE', fallback=None)
-        if not self.source_type:
+        self.target_type = pc_config.get('TARGET', 'TYPE', fallback=None)
+        if not self.target_type:
             raise Exception(f"[functional config[TARGET][TYPE]不存在]")
         elif(self.target_type.lower() == 'ftp'):
             try:
@@ -130,7 +121,6 @@ class FtpWritterImpl(FtpWritter):
             try:
                 self.s3_host = fc_config.get('S3', 'HOST')
                 self.s3_port = fc_config.get('S3', 'PORT')
-                self.s3_bucket = fc_config.get('S3', 'BUCKET')
                 self.s3_sec_file = fc_config.get('S3', 'ASSESS_ID_FILE')
                 self.s3_key_file = fc_config.get('S3', 'ASSESS_KEY_FILE')
                 self.s3_user, self.s3_sec_str = readSecFile(self.s3_sec_file)
@@ -142,25 +132,34 @@ class FtpWritterImpl(FtpWritter):
             raise Exception(f"[Target type {self.target_type} 未定義]")
 
         #Get config [TARGET] section
-        self.tg_type = fc_config.get('TARGET', 'TYPE', fallback=None)
-        self.tg_path = fc_config.get('TARGET', 'PATH', fallback=None)
-        self.tg_name_pattern = fc_config.get('TARGET', 'NAME_PATTERN', fallback=None)
-        self.tg_delimiter = fc_config.get('TARGET', 'DELIMITER', fallback=None)
-        self.tg_col_size_file = fc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
-        self.tg_new_line_character = "\n" if fc_config.get('TARGET', 'NEW_LINE_CHARACTER', fallback=None) == "\\n" else "\r\n"
-        self.tg_encoding = fc_config.get('TARGET', 'ENCODING', fallback=None)
-        self.tg_col_size_file = fc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
-        self.tg_header = fc_config.get('TARGET', 'HEADER', fallback=None)
+        self.tg_type = pc_config.get('TARGET', 'TYPE', fallback=None)
+        self.tg_path = pc_config.get('TARGET', 'PATH', fallback=None)
+        self.tg_name_pattern = pc_config.get('TARGET', 'NAME_PATTERN', fallback=None)
+        self.tg_delimiter = pc_config.get('TARGET', 'DELIMITER', fallback=None)
+        self.tg_col_size_file = pc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
+        self.tg_new_line_character = "\n" if pc_config.get('TARGET', 'NEW_LINE_CHARACTER', fallback=None) == "\\n" else "\r\n"
+        self.tg_encoding = pc_config.get('TARGET', 'ENCODING', fallback=None)
+        self.tg_col_size_file = pc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
+        self.tg_header = pc_config.get('TARGET', 'HEADER', fallback=None)
+        self.tg_bucket = pc_config.get('TARGET', 'BUCKET', fallback=None)
 
         # Get config [ZIP] section
-        self.zip_type = fc_config.get('ZIP', 'ZIP_TYPE', fallback=None)
-        self.zip_sec_file = fc_config.get('ZIP', 'SEC_FILE', fallback=None)
-        self.zip_key_file = fc_config.get('ZIP', 'KEY_FILE', fallback=None)
+        self.zip_type = pc_config.get('ZIP', 'ZIP_TYPE', fallback=None)
+        self.zip_sec_file = pc_config.get('ZIP', 'SEC_FILE', fallback=None)
+        self.zip_key_file = pc_config.get('ZIP', 'KEY_FILE', fallback=None)
         self.zip_sec = None
         if (self.zip_sec_file):
             self.zip_user, self.zip_sec_str = readSecFile(self.zip_sec_file)
             self.zip_salt = readSaltFile(self.zip_key_file)
             self.zip_sec = get_gpg_decrypt(self.zip_sec_str, self.zip_salt)
+
+        # create logger
+        try:
+            self.log_path = self.main_config.get('LOG', 'LOG_PATH')
+            self.log_name = ""
+        except Exception as e:
+            raise Exception(f"[讀取LOG path錯誤] {e}")
+        self.logger = self.createLog()
 
     def setLog(self, logger_main, errorHandler):
         self.logger_main = logger_main
@@ -168,11 +167,18 @@ class FtpWritterImpl(FtpWritter):
 
     def createLog(self):
         log_path = Path(self.log_path)
-        sql_file = Path(self.sql_file)
 
-        # 取得 sql 檔名（不含副檔名）
-        filename = sql_file.stem  # create_01
-        self.sql_file_name = sql_file.name
+        filename = None
+        sql_file = None
+        if(self.source_type.lower() == "db"):
+            # 取得 sql 檔名（不含副檔名）
+            sql_file = Path(self.sql_file)
+            filename = sql_file.stem  # create_01
+            self.sql_file_name = sql_file.name
+        else:
+            filename = "ftpwritter_S3_"
+
+
 
         # 日期
         today = datetime.today().strftime("%Y%m%d")
@@ -180,9 +186,6 @@ class FtpWritterImpl(FtpWritter):
 
         #組合log name
         log_name = f"{filename}_{timestamp}"
-
-        # 取得 sql 檔所在的子目錄名稱 (ddl)
-        subdir = sql_file.parent.name
 
         # 建立 log 完整路徑
         log_dir = log_path / "fw"
@@ -393,7 +396,7 @@ class FtpWritterImpl(FtpWritter):
         search_key = self.src_path + self.replaceArg(self.src_name_pattern)
         self.logger.debug(f'[Search S3 file with key {search_key}]')
         try:
-            s3SrcDao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
+            s3SrcDao = S3DaoImpl(self.src_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
         except Exception as e:
             self.logger.error(f'[S3連線失敗] {e}')
             self.errorHandler.exceptionWriter(f"[S3連線失敗]")
@@ -473,7 +476,7 @@ class FtpWritterImpl(FtpWritter):
             try:
                 target_path = self.tg_path + Path(upload_file).name
                 try:
-                    s3Dao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
+                    s3Dao = S3DaoImpl(self.tg_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
                 except Exception as e:
                     self.logger.error(f'[S3連線失敗] {e}')
                     self.errorHandler.exceptionWriter(f"[S3連線失敗]")
