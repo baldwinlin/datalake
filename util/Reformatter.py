@@ -11,9 +11,8 @@ class Reformatter:
         decoded_content = content.decode(decoding, errors_handling)
         return decoded_content
             
-
     @staticmethod
-    def encoding_to_uft_8(file_path: str, encoding: str, temp_upload_path: str):
+    def encoding_to_uft_8(file_path: str, encoding: str, temp_path: str):
         with open(file_path, "rb") as f:
             content = f.read()
 
@@ -23,16 +22,15 @@ class Reformatter:
         except UnicodeDecodeError as e:
             raise Exception(f"文件 {file_path} 包含無法用 {encoding} 解碼的內容: {e}")
 
-        with open(temp_upload_path, "w", encoding="utf-8") as f:
+        with open(temp_path, "w", encoding="utf-8") as f:
             f.write(decoded_content)
 
-
     @staticmethod
-    def insert_delimiter_with_sizes_file(file_path: str, col_size_file: str, temp_upload_path: str):
+    def insert_delimiter_with_sizes_file(file_path: str, col_size_file: str, temp_path: str, delimiter: str):
         with open(file_path, "rb") as f:
             content_bytes = f.read()
 
-        delimiter = b","
+        delimiter = delimiter.encode("utf-8")
         col_sizes = Reformatter._read_sizes_file(col_size_file, encoding = "utf-8")
 
         #將原始檔案內容分行寫進列表
@@ -44,21 +42,19 @@ class Reformatter:
             output.append(delimiter.join(reformated_line) + nl)
 
         result = b"".join(output)
-        with open(temp_upload_path, "wb") as f:
+        with open(temp_path, "wb") as f:
             reformated_file =f.write(result)
         
         return reformated_file
 
-
- 
     @staticmethod
-    def remove_header(file_path: str, temp_upload_path: str, encoding: str):
+    def remove_header(file_path: str, temp_path: str, encoding: str):
         with open(file_path, "r", encoding = encoding) as f:
             lines = f.readlines()
         data_lines = lines[1:]
         result = "".join(data_lines)
 
-        with open(temp_upload_path, "w", encoding = encoding) as f:
+        with open(temp_path, "w", encoding = encoding) as f:
             f.write(result)
     
     @staticmethod
@@ -73,7 +69,10 @@ class Reformatter:
             if not space:
                 continue
             size = space.rstrip(",").strip()
-            col_sizes.append(int(size))
+            try:
+                col_sizes.append(int(size))
+            except ValueError:
+                raise Exception(f"長度檔 {col_size_file} 的欄位長度不是數字: {size}")
         return col_sizes
 
     @staticmethod
