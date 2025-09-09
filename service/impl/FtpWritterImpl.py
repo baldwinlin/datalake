@@ -49,7 +49,6 @@ class FtpWritterImpl(FtpWritter):
         self.sql_file = sql_file
         self.logger_main = None
         self.errorHandler = None
-        self.out_file_name = ""
         self.args_dict = json.loads(self.args_str)
         self.log_level = main_config["LOG"].get("LOG_LEVEL", "INFO").upper()
 
@@ -136,12 +135,17 @@ class FtpWritterImpl(FtpWritter):
         self.tg_path = pc_config.get('TARGET', 'PATH', fallback=None)
         self.tg_name_pattern = pc_config.get('TARGET', 'NAME_PATTERN', fallback=None)
         self.tg_delimiter = pc_config.get('TARGET', 'DELIMITER', fallback=None)
+        if(self.tg_delimiter):
+            self.tg_delimiter = self.getCorrectDelimiter(self.tg_delimiter)
         self.tg_col_size_file = pc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
         self.tg_new_line_character = "\n" if pc_config.get('TARGET', 'NEW_LINE_CHARACTER', fallback=None) == "\\n" else "\r\n"
         self.tg_encoding = pc_config.get('TARGET', 'ENCODING', fallback=None)
         self.tg_col_size_file = pc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
         self.tg_header = pc_config.get('TARGET', 'HEADER', fallback=None)
         self.tg_bucket = pc_config.get('TARGET', 'BUCKET', fallback=None)
+        self.tg_ctl_file = pc_config.get('TARGET', 'CTL_FILE', fallback=None)
+        self.tg_ctl_file_name_pattern = pc_config.get('TARGET', 'CTL_FILE_NAME_PATTERN', fallback=None)
+        self.tg_ctl_file_delimiter = pc_config.get('TARGET', 'CTL_FILE_DELIMITER', fallback=None)
 
         # Get config [ZIP] section
         self.zip_type = pc_config.get('ZIP', 'ZIP_TYPE', fallback=None)
@@ -160,6 +164,27 @@ class FtpWritterImpl(FtpWritter):
         except Exception as e:
             raise Exception(f"[讀取LOG path錯誤] {e}")
         self.logger = self.createLog()
+
+    def getCorrectDelimiter(selr, delimiter_str):
+        """
+        將表示 Unicode 逸出序列的字串轉換為實際的分隔符號。
+
+        Args:
+          delimiter_str: 原始的分隔符號字串，可能包含 ',\'、'~!' 或 '\\u0006'。
+
+        Returns:
+          正確的分隔符號字串。
+        """
+        if isinstance(delimiter_str, str) and '\\u' in delimiter_str:
+            try:
+                # 將 '\\u0006' 轉換為 '\u0006'
+                return delimiter_str.encode().decode('unicode_escape')
+            except UnicodeDecodeError:
+                # 如果轉換失敗，則返回原始字串
+                return delimiter_str
+        else:
+            # 如果沒有 '\\u'，則直接返回原始字串
+            return delimiter_str
 
     def setLog(self, logger_main, errorHandler):
         self.logger_main = logger_main
@@ -214,40 +239,64 @@ class FtpWritterImpl(FtpWritter):
             exit(1)
 
     def exportFile(self, conn, sql_str, output_file, delimiter=",", new_line_ch="\n", encoding="utf-8"):
-        try:
+        """
+        從資料庫中查詢資料並匯出到檔案，採用分批讀取以避免記憶體溢出。
 
+        Args:
+            conn: 資料庫連線物件。
+            sql_str: 要執行的 SQL 查詢字串。
+            output_file: 輸出檔案的路徑。
+            delimiter: 欄位分隔符號，預設為逗號。
+            new_line_ch: 換行字元，預設為 \n。
+            encoding: 檔案編碼，預設為 utf-8。
+        Returns:
+            int: 實際寫入檔案的資料筆數。
+        """
+        chunk_size = 10000 #每次從資料庫讀取的資料筆數
+
+        cnt = 0
+        cursor = None
+        try:
             cursor = conn.cursor()
 
-            # 查詢所有資料
             try:
                 cursor.execute(sql_str)
-                rows = cursor.fetchall()
             except Exception as e:
                 self.logger.error(f'[執行SQL失敗] {e}')
                 self.errorHandler.exceptionWriter(f"[執行SQL失敗] {e}")
                 exit(1)
+
             # 取得欄位名稱
             col_names = [desc[0] for desc in cursor.description]
 
-            cnt = 0
             with open(output_file, "w", encoding=encoding, errors="replace", newline="") as f:
                 # 先寫欄位名稱
                 if(self.tg_header.lower() == 'y'):
                     f.write(delimiter.join(col_names) + new_line_ch)
-                # 再寫每一筆資料
-                for row in rows:
-                    f.write(delimiter.join(str(v) if v is not None else "" for v in row) + new_line_ch)
-                    cnt += 1
+
+                # 採用分批讀取的方式
+                while True:
+                    rows = cursor.fetchmany(chunk_size)
+                    if not rows:
+                        break  # 如果沒有更多資料，就結束迴圈
+
+                    # 寫入每一筆資料
+                    for row in rows:
+                        f.write(delimiter.join(str(v) if v is not None else "" for v in row) + new_line_ch)
+                        cnt += 1
 
             self.logger.info(f'[產出檔案成功] {output_file}')
             self.logger.info(f'[產出筆數: {cnt}] ')
+            return cnt
 
         except Exception as e:
             self.logger.error(f'[產出檔案錯誤] {e}')
             self.errorHandler.exceptionWriter(f"[產出檔案錯誤] {e}")
             exit(1)
+        finally:
+            if cursor:
+                cursor.close()
 
-        cursor.close()
 
     def formatField(self, value, length, dtype="str", encoding="big5"):
         """格式化欄位為固定長度 (byte)。"""
@@ -280,17 +329,17 @@ class FtpWritterImpl(FtpWritter):
 
     def exportFixedLengthFile(self, conn, sql, output_file, field_lengths, line_ending="\n", encoding="big5"):
         """
-        從資料庫讀取資料，輸出固定長度檔案 (含欄位名稱 Header)。
+        從資料庫讀取資料，輸出固定長度檔案 (含欄位名稱 Header)，採用分批讀取。
         :param sql: 查詢語法
         :param output_file: 輸出檔案路徑
         :param field_lengths: 欄位長度list
         :param line_ending: 換行符號
         :param encoding: 輸出編碼
         """
+        chunk_size = 10000 #每次從資料庫讀取的資料筆數
         try:
             cursor = conn.cursor()
             cursor.execute(sql)
-            rows = cursor.fetchall()
         except Exception as e:
             self.logger.error(f'[執行SQL失敗] {e}')
             self.errorHandler.exceptionWriter(f"[執行SQL失敗] {e}")
@@ -298,12 +347,11 @@ class FtpWritterImpl(FtpWritter):
 
         # 欄位資訊
         col_info = cursor.description  # [(name, type, ...), ...]
-        conn.close()
 
         # 自動判斷型別
         def detect_dtype(db_type):
             if db_type == jaydebeapi.STRING:
-                return "str"  # sqlite 無明確型別，預設文字
+                return "str"
             elif db_type == jaydebeapi.NUMBER:
                 return "num"
             elif db_type == jaydebeapi.FLOAT:
@@ -321,7 +369,7 @@ class FtpWritterImpl(FtpWritter):
         try:
             with open(output_file, "wb") as f:
                 # 輸出 Header
-                if(self.tg_header.lower() == 'y'):
+                if self.tg_header.lower() == 'y':
                     header_bytes = b""
                     for col_name, col_length, _ in col_meta:
                         header_bytes += self.formatField(col_name, col_length, "str", encoding)
@@ -329,20 +377,30 @@ class FtpWritterImpl(FtpWritter):
 
                 # 輸出資料列
                 cnt = 0
-                for row in rows:
-                    line_bytes = b""
-                    for idx, (col_name, col_length, dtype) in enumerate(col_meta):
-                        line_bytes += self.formatField(row[idx], col_length, dtype, encoding)
-                    #print("out: ", line_bytes, len(line_bytes))
-                    f.write(line_bytes + line_ending.encode(encoding))
-                    cnt += 1
+                while True:
+                    rows = cursor.fetchmany(chunk_size)
+                    if not rows:
+                        break  # 如果沒有更多資料，就結束迴圈
+
+                    for row in rows:
+                        line_bytes = b""
+                        for idx, (col_name, col_length, dtype) in enumerate(col_meta):
+                            line_bytes += self.formatField(row[idx], col_length, dtype, encoding)
+                        f.write(line_bytes + line_ending.encode(encoding))
+                        cnt += 1
 
             self.logger.info(f'[產出檔案成功] {output_file}')
             self.logger.info(f'[產出筆數: {cnt}] ')
+            return cnt
         except Exception as e:
             self.logger.error(f'[產出檔案錯誤] {e}')
             self.errorHandler.exceptionWriter(f"[產出檔案錯誤] {e}")
             exit(1)
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
 
     def readSqlFile(self):
@@ -377,20 +435,29 @@ class FtpWritterImpl(FtpWritter):
         sql_str = self.readSqlFile()
         self.logger.debug(f'[執行SQL]\n{sql_str}')
         out_file = self.temp_path / self.replaceArg(self.tg_name_pattern)
+        out_file_ctl = self.temp_path / self.replaceArg(self.tg_ctl_file_name_pattern)
+        process_cnt = 0
         if (self.tg_delimiter):  # Export file with delimiter
-            self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter, self.tg_new_line_character,
-                            self.tg_encoding)
+            process_cnt = self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter,
+                            self.tg_new_line_character, self.tg_encoding)
 
         elif (self.tg_col_size_file):  # Export file with fixed field length
             with open(self.tg_col_size_file, "r", encoding="utf-8") as f:
                 fields_lens = [int(line.strip()) for line in f if line.strip()]
-            self.exportFixedLengthFile(dao.conn, sql_str, out_file, fields_lens, self.tg_new_line_character,
-                                       self.tg_encoding)
+            process_cnt = self.exportFixedLengthFile(dao.conn, sql_str, out_file, fields_lens,
+                                       self.tg_new_line_character, self.tg_encoding)
         else:
             self.logger.error(f'[分隔符號或固定欄寬未定義]')
             self.errorHandler.exceptionWriter(f"[分隔符號或固定欄寬未定義]")
             exit(1)
-        return out_file
+        ctl_file = None
+        if(self.tg_ctl_file.lower() == 'y'):
+            ctl_file = self.temp_path / self.replaceArg(self.tg_ctl_file_name_pattern)
+            with open(ctl_file, "w", encoding=self.tg_encoding, errors="replace") as f:
+                today = datetime.today().strftime("%Y%m%d")
+                ctl_text = f'{today}{self.tg_ctl_file_delimiter}{process_cnt:06d}'
+                f.write(ctl_text)
+        return out_file, ctl_file
 
     def getS3Files(self):
         search_key = self.src_path + self.replaceArg(self.src_name_pattern)
@@ -496,9 +563,11 @@ class FtpWritterImpl(FtpWritter):
         filelist = []
         upload_file = None
         if(self.source_type.lower() == "db"):
-            out_file = self.exportDbFile()
+            out_file, ctl_file = self.exportDbFile()
             upload_file = out_file
             filelist.append(str(out_file))
+            if(ctl_file):
+                filelist.append(str(ctl_file))
         elif(self.source_type.lower() == "s3"):
             out_file = self.temp_path / self.replaceArg(self.tg_name_pattern)
             filelist = self.getS3Files()
