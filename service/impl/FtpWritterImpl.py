@@ -63,6 +63,8 @@ class FtpWritterImpl(FtpWritter):
         except Exception as e:
             raise Exception(f"[讀取DB dreiver path錯誤] {e}")
 
+        self.log_prefix = pc_config.get('LOG', 'LOG_PREFIX', fallback='ftpwritter_')
+
         #確認資料來源S3 or Hive
         self.source_type = pc_config.get('SOURCE', 'TYPE', fallback='')
         if not self.source_type:
@@ -193,15 +195,15 @@ class FtpWritterImpl(FtpWritter):
     def createLog(self):
         log_path = Path(self.log_path)
 
-        filename = None
-        sql_file = None
-        if(self.source_type.lower() == "db"):
-            # 取得 sql 檔名（不含副檔名）
-            sql_file = Path(self.sql_file)
-            filename = sql_file.stem  # create_01
-            self.sql_file_name = sql_file.name
-        else:
-            filename = "ftpwritter_S3_"
+        # filename = None
+        # sql_file = None
+        # if(self.source_type.lower() == "db"):
+        #     # 取得 sql 檔名（不含副檔名）
+        #     sql_file = Path(self.sql_file)
+        #     filename = sql_file.stem  # create_01
+        #     self.sql_file_name = sql_file.name
+        # else:
+        #     filename = "ftpwritter_S3_"
 
 
 
@@ -210,7 +212,7 @@ class FtpWritterImpl(FtpWritter):
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
         #組合log name
-        log_name = f"{filename}_{timestamp}"
+        log_name = f"{self.log_prefix}_{timestamp}"
 
         # 建立 log 完整路徑
         log_dir = log_path / "fw"
@@ -234,9 +236,7 @@ class FtpWritterImpl(FtpWritter):
             self.logger.info('[資料庫連線完成]')
             return dao
         except Exception as e:
-            self.logger.error(f'[資料庫連線失敗] {e}')
-            self.errorHandler.exceptionWriter(f"[連線資料庫錯誤] {e}")
-            exit(1)
+            self.errorExit(f'[資料庫連線失敗] {e}')
 
     def exportFile(self, conn, sql_str, output_file, delimiter=",", new_line_ch="\n", encoding="utf-8"):
         """
@@ -262,9 +262,7 @@ class FtpWritterImpl(FtpWritter):
             try:
                 cursor.execute(sql_str)
             except Exception as e:
-                self.logger.error(f'[執行SQL失敗] {e}')
-                self.errorHandler.exceptionWriter(f"[執行SQL失敗] {e}")
-                exit(1)
+                self.errorExit(f'[執行SQL失敗] {e}')
 
             # 取得欄位名稱
             col_names = [desc[0] for desc in cursor.description]
@@ -290,9 +288,7 @@ class FtpWritterImpl(FtpWritter):
             return cnt
 
         except Exception as e:
-            self.logger.error(f'[產出檔案錯誤] {e}')
-            self.errorHandler.exceptionWriter(f"[產出檔案錯誤] {e}")
-            exit(1)
+            self.errorExit(f'[產出檔案錯誤] {e}')
         finally:
             if cursor:
                 cursor.close()
@@ -341,9 +337,7 @@ class FtpWritterImpl(FtpWritter):
             cursor = conn.cursor()
             cursor.execute(sql)
         except Exception as e:
-            self.logger.error(f'[執行SQL失敗] {e}')
-            self.errorHandler.exceptionWriter(f"[執行SQL失敗] {e}")
-            exit(1)
+            self.errorExit(f"[執行SQL失敗] {e}")
 
         # 欄位資訊
         col_info = cursor.description  # [(name, type, ...), ...]
@@ -393,9 +387,7 @@ class FtpWritterImpl(FtpWritter):
             self.logger.info(f'[產出筆數: {cnt}] ')
             return cnt
         except Exception as e:
-            self.logger.error(f'[產出檔案錯誤] {e}')
-            self.errorHandler.exceptionWriter(f"[產出檔案錯誤] {e}")
-            exit(1)
+            self.errorExit(f'[產出檔案錯誤] {e}')
         finally:
             if cursor:
                 cursor.close()
@@ -411,9 +403,7 @@ class FtpWritterImpl(FtpWritter):
             with open(self.sql_file, "r") as file:
                 sql_str = file.read()
         except Exception as e:  # Catching a more general exception for demonstration
-            self.logger.error(f"[讀取SQL file錯誤] {e}")
-            self.errorHandler.exceptionWriter(f"[讀取SQL file錯誤] {e}")
-            exit(1)
+            self.errorExit(f"[讀取SQL file錯誤] {e}")
 
         return self.replaceArg(sql_str)
 
@@ -429,9 +419,7 @@ class FtpWritterImpl(FtpWritter):
         try:
             dao = self.connectDb()
         except Exception as e:
-            self.logger.error(f'[資料庫連線失敗] {e}')
-            self.errorHandler.exceptionWriter(f"[連線資料庫錯誤] {e}")
-            exit(1)
+            self.errorExit(f'[資料庫連線失敗] {e}')
         sql_str = self.readSqlFile()
         self.logger.debug(f'[執行SQL]\n{sql_str}')
         out_file = self.temp_path / self.replaceArg(self.tg_name_pattern)
@@ -447,9 +435,7 @@ class FtpWritterImpl(FtpWritter):
             process_cnt = self.exportFixedLengthFile(dao.conn, sql_str, out_file, fields_lens,
                                        self.tg_new_line_character, self.tg_encoding)
         else:
-            self.logger.error(f'[分隔符號或固定欄寬未定義]')
-            self.errorHandler.exceptionWriter(f"[分隔符號或固定欄寬未定義]")
-            exit(1)
+            self.errorExit(f'[分隔符號或固定欄寬未定義]')
         ctl_file = None
         if(self.tg_ctl_file.lower() == 'y'):
             ctl_file = self.temp_path / self.replaceArg(self.tg_ctl_file_name_pattern)
@@ -465,9 +451,7 @@ class FtpWritterImpl(FtpWritter):
         try:
             s3SrcDao = S3DaoImpl(self.src_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
         except Exception as e:
-            self.logger.error(f'[S3連線失敗] {e}')
-            self.errorHandler.exceptionWriter(f"[S3連線失敗]")
-            exit(1)
+            self.errorExit(f'[S3連線失敗] {e}')
 
         filelist = s3SrcDao.listFiles(search_key)
         self.logger.debug(f'[Source file list ] {filelist}')
@@ -480,9 +464,7 @@ class FtpWritterImpl(FtpWritter):
             try:
                 s3SrcDao.downloadFile(file, remote_path)
             except Exception as e:
-                self.logger.error(f'[S3下載失敗] {e}')
-                self.errorHandler.exceptionWriter(f"[S3下載失敗]")
-                exit(1)
+                self.errorExit(f"[S3下載失敗]")
             line_cnt = self.convertEncoding(remote_path, self.tg_encoding, self.src_encoding)
             self.logger.info(f'[檔案筆數] {remote_path} : {line_cnt}')
 
@@ -501,9 +483,7 @@ class FtpWritterImpl(FtpWritter):
                 tmp_path = file_path.with_suffix("." + "tmp")
                 tmp_file = open(tmp_path, mode="w", encoding=target_encoding, errors="replace")
             except Exception as e:
-                self.logger.error(f'[開啟暫存檔失敗] {e}')
-                self.errorHandler.exceptionWriter(f"[開啟暫存檔失敗] {e}")
-                exit(1)
+                self.errorExit(f"[開啟暫存檔失敗] {e}")
 
         line_cnt = 0
         try:
@@ -513,9 +493,7 @@ class FtpWritterImpl(FtpWritter):
                         tmp_file.write(line)
                     line_cnt += 1
         except Exception as e:
-            self.logger.error(f'[檔案轉碼失敗] {e}')
-            self.errorHandler.exceptionWriter(f"[檔案轉碼失敗] {e}")
-            exit(1)
+            self.errorExit(f"[檔案轉碼失敗] {e}")
 
         # 替換原檔案
         if (target_encoding != source_encoding):
@@ -529,32 +507,24 @@ class FtpWritterImpl(FtpWritter):
             try:
                 ftpDao = FtpDaoImpl(self.ftp_type, self.ftp_host, self.ftp_port, self.ftp_user, self.ftp_sec)
             except Exception as e:
-                self.logger.error(f'[FTP連線失敗] {e}')
-                self.errorHandler.exceptionWriter(f"[FTP連線錯誤] {e}")
-                exit(1)
+                self.errorExit(f'[FTP連線失敗] {e}')
             try:
                 ftpDao.uploadFile(upload_file, self.tg_path)
                 self.logger.info(f"[上傳檔案至FTP成功] {upload_file}")
             except Exception as e:
-                self.logger.error(f'[FTP上傳失敗] {e}')
-                self.errorHandler.exceptionWriter(f"[FTP上傳失敗] {e}")
-                exit(1)
+                self.errorExit(f"[FTP上傳失敗] {e}")
         elif (self.tg_type.lower() == 's3'):
             try:
                 target_path = self.tg_path + Path(upload_file).name
                 try:
                     s3Dao = S3DaoImpl(self.tg_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
                 except Exception as e:
-                    self.logger.error(f'[S3連線失敗] {e}')
-                    self.errorHandler.exceptionWriter(f"[S3連線失敗]")
-                    exit(1)
+                    self.errorExit(f"[S3連線失敗]")
                 self.logger.debug(f'[上傳檔案: {upload_file} -> {target_path}')
                 s3Dao.uploadFile(upload_file, target_path)
                 self.logger.info(f'[上傳檔案至S3成功] {upload_file}')
             except Exception as e:
-                self.logger.error(f'[上傳檔案至S3失敗] {e}')
-                self.errorHandler.exceptionWriter(f"[上傳檔案至S3失敗] {e}")
-                exit(1)
+                self.errorExit(f'[上傳檔案至S3失敗] {e}')
 
 
     def run(self):
@@ -572,9 +542,7 @@ class FtpWritterImpl(FtpWritter):
             out_file = self.temp_path / self.replaceArg(self.tg_name_pattern)
             filelist = self.getS3Files()
         else:
-            self.logger.error(f"[Source type未定義]")
-            self.errorHandler.exceptionWriter(f"[Source type未定義]")
-            exit(1)
+            self.errorExit(f"[Source type未定義]")
 
 
         #Compress data and upload files
@@ -585,13 +553,16 @@ class FtpWritterImpl(FtpWritter):
             try:
                 Compressor.compress(str(out_zip_file), filelist, self.zip_sec)
             except Exception as e:
-                self.logger.error(f'[壓縮檔案失敗] {e}')
-                self.errorHandler.exceptionWriter(f"[壓縮檔案失敗] {e}")
-                exit(1)
+                self.errorExit(f'[壓縮檔案失敗] {e}')
             self.uploadFile(out_zip_file)
         else:
             for upload_file in filelist:
                 self.uploadFile(upload_file)
+
+    def errorExit(self, error_message):
+        self.logger.error(error_message)
+        self.errorHandler.exceptionWriter(error_message)
+        exit(1)
 
 
 

@@ -30,6 +30,7 @@ from service.impl.SqlExecutionImpl  import *
 from service.impl.DbtExecutionImpl import *
 from service.impl.AirbyteExecutionImpl import *
 from service.impl.AirbyteCancelForced import *
+from service.impl.UploadCheck import *
 
 from util.CleanTempFIle import *
 
@@ -140,6 +141,20 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
         elif result == False:
             logger_main.error("Run Airbyte Cancel Forced failed")
             exit(1)
+
+    elif (fun == 'UC'):
+        logger_main.info("Run Upload Check")
+        try:
+            uc = UploadCheckImpl(main_config, fc_config, pc_config, fc_args)
+        except Exception as e:
+            logger_main.error(f"UploadCheckImpl {e}")
+            errorHandler.exceptionWriter(f"UploadCheckImpl {e}")
+            exit(1)
+
+        if (uc.run()):
+            logger_main.info("Run Upload Check success")
+            exit(0)
+
     else:
         print("No such function")
         exit(1)
