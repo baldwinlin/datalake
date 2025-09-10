@@ -561,7 +561,7 @@ class FtpWritterImpl(FtpWritter):
 
     def errorExit(self, error_message):
         self.logger.error(error_message)
-        self.errorHandler.exceptionWriter(error_message)
+        #self.errorHandler.exceptionWriter(error_message)
         exit(1)
 
 

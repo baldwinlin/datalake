@@ -15,9 +15,16 @@ Output          :
 Modify          :
 '''
 
+import logging
 from service.UploadCheck import *
 import json
 from pathlib import Path
+from datetime import datetime
+from logger import Logger
+from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
+from dao.impl.JdbcDaoImpl import JdbcDaoImpl
+from crypto.Aes256Crypto import *
+import jaydebeapi
 
 class UploadCheckImpl(UploadCheck):
 
@@ -27,7 +34,12 @@ class UploadCheckImpl(UploadCheck):
         self.args_str = args
         self.logger_main = None
         self.errorHandler = None
-        self.args_dict = json.loads(self.args_str)
+        try:
+            self.args_dict = json.loads(self.args_str)
+            self.batch_date = self.args_dict["BATCH_DATE"]
+        except Exception as e:
+            raise Exception(f"[讀取args錯誤] {e}")
+
         self.log_level = main_config["LOG"].get("LOG_LEVEL", "INFO").upper()
 
         try:
@@ -41,5 +53,170 @@ class UploadCheckImpl(UploadCheck):
         except Exception as e:
             raise Exception(f"[讀取DB dreiver path錯誤] {e}")
 
+        try:
+            self.host = self.fc_config.get('DB', 'HOST')
+            self.port = self.fc_config.get('DB', 'PORT')
+            self.db_sec_file = self.fc_config.get('DB', 'SEC_FILE')
+            self.db_key_file = self.fc_config.get('DB', 'KEY_FILE')
+            self.db_name = self.fc_config.get('DB', 'DB_NAME')
+            self.driver = self.fc_config.get('DB', 'DRIVER')
+            self.db_user, self.db_sec_str = readSecFile(self.db_sec_file)
+            self.db_salt = readSaltFile(self.db_key_file)
+            self.db_sec = get_gpg_decrypt(self.db_sec_str, self.db_salt)
+        except Exception as e:
+            raise Exception(f"[讀取DB config錯誤] {e}")
+
+        self.log_prefix = pc_config.get('LOG', 'LOG_PREFIX', fallback='uploadcheck_')
+        # create logger
+        try:
+            self.log_path = self.main_config.get('LOG', 'LOG_PATH')
+            self.log_name = ""
+        except Exception as e:
+            raise Exception(f"[讀取LOG path錯誤] {e}")
+        self.logger = self.createLog()
+
+        #Get Source info
+        try:
+            self.src_db = pc_config.get('SOURCE', 'DATABASE')
+            self.src_table = pc_config.get('SOURCE', 'TABLE')
+            self.check_col = pc_config.get('SOURCE', 'CHECK_COL')
+            self.src_ctl_table = pc_config.get('SOURCE', 'CTL_TABLE')
+            self.src_ignoer_zero = pc_config.get('SOURCE', 'IGNORE_ZERO', fallback='N')
+        except Exception as e:
+            raise Exception(f"[讀取SOURCE config錯誤] {e}")
+
+        # Get Target info
+        try:
+            self.tg_db = pc_config.get('TARGET', 'DATABASE')
+            self.tg_table = pc_config.get('TARGET', 'TABLE')
+            self.tg_ctl_table = pc_config.get('TARGET', 'CTL_TABLE')
+        except Exception as e:
+            raise Exception(f"[TARGET config錯誤] {e}")
+
+
+    def createLog(self):
+        log_path = Path(self.log_path)
+
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+
+        #組合log name
+        log_name = f"{self.log_prefix}_{timestamp}"
+
+        # 建立 log 完整路徑
+        log_dir = log_path / "uc"
+        Logger.Logger(log_dir, log_name)  # 模組日誌
+        return logging.getLogger(log_name)
+
+    def errorExit(self, error_message):
+        self.logger.error(error_message)
+        #self.errorHandler.exceptionWriter(error_message)
+        exit(1)
+
+    def connectDb(self):
+        if (self.driver.lower() == 'hive2'):
+            driver_class = "org.apache.kyuubi.jdbc.KyuubiHiveDriver"
+            jdbc_url = f"jdbc:hive2://{self.host}:{self.port}/{self.db_name};auth=LDAP"
+            driver_jar = f"{self.driver_path}/kyuubi-hive-jdbc-shaded-1.10.2.jar"
+        elif (self.driver.lower() == 'mysql'):
+            driver_class = "com.mysql.cj.jdbc.Driver"
+            jdbc_url = f"jdbc:mysql://{self.host}:{self.port}/{self.db_name}"
+            driver_jar = f"{self.driver_path}\\mysql-connector-j-9.4.0.jar"
+
+        dao = JdbcDaoImpl(driver_class, jdbc_url, self.db_user, self.db_sec, driver_jar)
+
+        try:
+            dao.connect()
+            self.logger.info('[資料庫連線完成]')
+            return dao
+        except Exception as e:
+            self.errorExit(f'[資料庫連線失敗] {e}')
+
+    def insertData(self, conn, source_table, target_table):
+        """
+        從來源表格的欄位名稱來組成 INSERT INTO ... SELECT ... 語法，並執行。
+
+        :param conn: 已經建立好的 jaydebeapi 連線物件
+        :param source_table: 來源表格名稱
+        :param target_table: 目標表格名稱
+        """
+        cursor = None
+        try:
+            cursor = conn.cursor()
+
+            # 1. 查詢來源表格，並取得欄位名稱
+            # 這裡只取一筆資料來取得欄位資訊，不需要載入所有資料
+            sql_get_columns = f"SELECT * FROM {source_table} LIMIT 1"
+            cursor.execute(sql_get_columns)
+
+            # 取得欄位名稱
+            column_names = [desc[0] for desc in cursor.description]
+
+            # 2. 動態產生 INSERT INTO ... SELECT ... 的 SQL 語法
+            columns_str = ', '.join(column_names)
+            sql_insert_select = f"INSERT INTO {target_table} ({columns_str}) SELECT {columns_str} FROM {source_table}"
+
+            self.logger.info(f'[Insert SQL] {sql_insert_select}')
+
+            # 3. 執行單一 SQL 語法
+            cursor.execute(sql_insert_select)
+            affected_rows = cursor.rowcount
+            self.logger.info(f'[Insert資料完成，寫入筆數: {affected_rows}]')
+
+        except Exception as e:
+            self.errorExit(f"[Insert資料失敗] {e}")
+        finally:
+            if cursor:
+                cursor.close()
+
     def run(self):
-        pass
+        self.logger.setLevel(getattr(logging, self.log_level, logging.INFO))
+        self.logger.info("[Run Upload Check]")
+        #Connect DB
+        try:
+            dao = self.connectDb()
+        except Exception as e:
+            self.errorExit(f'[資料庫連線失敗] {e}')
+
+        #Read source control table
+        check_cnt = 0
+        sql = "select * from {}.{} where lower(table_name) = '{}' order by time desc".format(
+            self.src_db, self.src_ctl_table, self.src_table.lower() )
+        self.logger.debug(f"[SQL] {sql}")
+        try:
+            cursor = dao.conn.cursor()
+            cursor.execute(sql)
+            rows = cursor.fetchmany(1)
+            self.logger.info("[Control table] " + str(rows))
+            check_cnt = rows[0][3]
+        except Exception as e:
+            self.errorExit(f'[讀取control table失敗] {e}')
+        finally:
+            if cursor:
+                cursor.close()
+
+        #Check count for source table
+        total_cnt = 0
+        sql = "select count(*) from {}.{} where {} = '{}'".format(self.src_db, self.src_table, self.check_col, self.batch_date)
+        self.logger.debug(f"[SQL] {sql}")
+        try:
+            cursor = dao.conn.cursor()
+            cursor.execute(sql)
+            rows = cursor.fetchmany(1)
+            total_cnt = rows[0][0]
+            self.logger.info(f"[來源筆數: {total_cnt}]")
+        except Exception as e:
+            self.errorExit(f'[檢查筆數失敗] {e}')
+        finally:
+            if cursor:
+                cursor.close()
+
+        if check_cnt != total_cnt:
+            errmsg = f'[筆數不一致，預計: {check_cnt} 實際: {total_cnt} ]'
+            self.errorExit(errmsg)
+
+        #Insert data from source table to target table
+        source_table = f'{self.src_db}.{self.src_table}'
+        target_table = f'{self.tg_db}.{self.tg_table}'
+        self.insertData(dao.conn, source_table, target_table)
+
+        #Write target control table
