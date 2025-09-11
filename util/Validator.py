@@ -1,4 +1,4 @@
-from tkinter import NONE
+# from tkinter import NONE
 from typing import Optional
 from util.FilenameProcessor import FilenameProcessor
 from util.Reformatter import Reformatter
@@ -7,19 +7,26 @@ import os
 
 class Validator:
 
-    @staticmethod #等待處理
-    def get_file_line_count(file_name:str, file_path:str, header_line:str, controller_file_delimiter:str = None, controller_file_name_pattern:str = None, header:str = None):
-        if FilenameProcessor._match_name_pattern(file_name, controller_file_name_pattern): 
+    @staticmethod
+    def get_file_line_count(file_name:str, file_path:str, header_line:str, controller_file_delimiter:str = None, controller_file_name_pattern:str = None):
+        if FilenameProcessor.is_controller_file(file_name, controller_file_name_pattern): 
             controller_file_path = os.path.join(file_path, file_name)
             expected_records = Validator._read_CTF_rows_data(controller_file_path, controller_file_delimiter)
-            return ("檢核檔", file_name, expected_records)
+            if header_line == "Y":
+                with_header_expected_records = expected_records
+                return ("檢核檔", file_name, expected_records,f"包含 Header 總計筆數{with_header_expected_records}")
+            else:
+                return ("檢核檔", file_name, expected_records,f"不包含 Header 總計筆數{expected_records}")
         else:
             file_path = os.path.join(file_path, file_name)
             with open(file_path, "rb") as f:
                 downloaded_lines_count = len(f.readlines())
             if header_line == "Y":
+                with_header_count = downloaded_lines_count
                 downloaded_lines_count -= 1
-            return ("檔案", file_name, downloaded_lines_count)
+                return ( "檔案", file_name , downloaded_lines_count, f"包含 Header 總計筆數{with_header_count}")
+            else:
+                return ( "檔案", file_name , downloaded_lines_count, f"不包含 Header 總計筆數{downloaded_lines_count}")
     
     @staticmethod
     def _read_CTF_rows_data(controller_file_path: str, controller_file_delimiter: str) -> int:
@@ -31,15 +38,14 @@ class Validator:
             
             with open(controller_file_path, 'r', encoding='big5') as f:
                 content = f.read().strip()
-            print(f"content: {content}")
             
             if controller_file_delimiter is None:
                 if len(content) > 8 :
-                    record_count = content[8:]  # 跳過前8位日期
+                    record_count = content[8:]
                     try:
                         count_int = int(record_count)
                     except Exception:
-                        raise Exception(f"讀取控制檔失敗 {controller_file_path} 有分隔符號但是沒有輸入分隔符號：{content}")
+                        raise Exception(f"讀取控制檔失敗 {controller_file_path} 有分隔符號但是沒有輸入分隔符號或是資料格式錯誤：{content}")
                     return count_int
             elif controller_file_delimiter in content:
                 parts = content.split(controller_file_delimiter)
@@ -63,7 +69,7 @@ class Validator:
         total_rows_count = 0
         controller_rows_count = 0
         file_counts = 0
-        for kind, fname, rows_count in file_rows_counts_info:
+        for kind, _ , rows_count, _ in file_rows_counts_info:
             if kind == "檔案":
                 total_rows_count += rows_count
                 file_counts += 1
