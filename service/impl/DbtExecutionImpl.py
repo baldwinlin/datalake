@@ -20,8 +20,8 @@ import logging
 from logger import Logger
 # from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
 import json
-
 import os
+import datetime
 
 class DbtExecutionImpl(DbtExecution):
     def __init__(self, main_config, config, args):
@@ -42,6 +42,8 @@ class DbtExecutionImpl(DbtExecution):
         # 初始化 logger 變數
         self.main_config = main_config
         self.logger_main = None
+        self.log_level = self.main_config["LOG"].get("LOG_LEVEL", "INFO").upper()
+
         # self.errorHandler = None
 
     def _initialize_logger(self):
@@ -49,16 +51,21 @@ class DbtExecutionImpl(DbtExecution):
         log_config = self.main_config
         dbt_log_path = f"{log_config['LOG']['LOG_PATH']}/dbt"
 
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        logger_file_name = f"batch_date_{self.batch_date}_{timestamp}"
+
+
         # 創建兩個 Logger 實例
-        Logger.Logger(dbt_log_path, "dbt_main") # 主要日誌
+        Logger.Logger(dbt_log_path, logger_file_name) # 主要日誌
         # Logger.Logger(dbt_log_path, "dbt_error_handler") # 錯誤日誌
 
         # 更新 DbtExecution 的 logger_main 和 errorHandler attribute
-        self.logger_main = logging.getLogger('dbt_main') # 取得主要 logger 實例
+        self.logger_main = logging.getLogger(logger_file_name) # 取得主要 logger 實例
         # self.errorHandler = dataLakeUtilsErrorHandler('dbt_error_handler') # 取得錯誤處理器實例
 
 
     def run(self):
+
 
         self._initialize_logger()  # 初始化 logger
         try:

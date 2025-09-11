@@ -14,14 +14,15 @@ Modify          :
 '''
 
 import os
-import json
-import fnmatch
+# import json
+# import fnmatch
 import paramiko
 from ftplib import FTP, error_perm
 
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from dao.FileDao import FileDao
 from stat import S_ISREG
+from util.FilenameProcessor import FilenameProcessor
 
 class FtpDaoImpl(FileDao):
     def __init__(self, ftp_type, host, port, user, sec, logger=None):
@@ -76,35 +77,38 @@ class FtpDaoImpl(FileDao):
             sftp.chdir(sftp.normalize('.'))  # 進入 SFTP 根目錄
             self.SFTP = sftp  # 儲存 SFTP 連線物件
 
-    # ListFiles 私有函式模組：_process_name_pattern 和 _match_name_pattern
-    def _process_name_pattern(self, name_pattern, date):
-        """處理檔案名稱模式，替換單一參數日期變數"""
-        if not name_pattern:
-            raise Exception("尚未正確設定檔案名稱模式")
+    # # ListFiles 私有函式模組：_process_name_pattern 和 _match_name_pattern
+    # def _process_name_pattern(self, name_pattern, date):
+    #     """處理檔案名稱模式，替換單一參數日期變數"""
+    #     if not name_pattern:
+    #         raise Exception("尚未正確設定檔案名稱模式")
         
-        if "${date}" in name_pattern:
-            if not date:
-                raise Exception("尚未正確設定 Batch Date")
-            processed_name_pattern = name_pattern.replace("${date}", str(date))
-            return processed_name_pattern
-        else:
-            return name_pattern
+    #     if "${date}" in name_pattern:
+    #         if not date:
+    #             raise Exception("尚未正確設定 Batch Date")
+    #         processed_name_pattern = name_pattern.replace("${date}", str(date))
+    #         return processed_name_pattern
+    #     else:
+    #         return name_pattern
 
-    def _match_name_pattern(self, name: str, target_name_pattern: str) -> bool:
-        """檢查檔案名稱是否符合指定的模式"""
-        result = fnmatch.fnmatch(name, target_name_pattern)
-        return result
+    # def _match_name_pattern(self, name: str, target_name_pattern: str) -> bool:
+    #     """檢查檔案名稱是否符合指定的模式"""
+    #     try:
+    #         result = fnmatch.fnmatch(name, target_name_pattern)
+    #     except Exception as e:
+    #         raise Exception(f"檢查檔案名稱是否符合指定的模式失敗: {e}")
+    #     return result
 
     def listFiles(self, source_path, name_pattern, date) -> List[str]:
         """初始化列出符合名稱模式的檔案"""
-        target_name_pattern = self._process_name_pattern(name_pattern, date)
+        target_name_pattern = FilenameProcessor._process_name_pattern(name_pattern, date)
         files: List[str] = []
         
         """使用 FTP server 列出符合名稱模式的檔案，支援 MLSD 和 NLST 列舉檔案"""
         if self.ftp_type == "FTP":
             try: # 使用 MLSD 列出檔案
                 for file_name, facts in self.FTP.mlsd(source_path):
-                    if facts.get("type") == "file" and self._match_name_pattern(file_name, target_name_pattern):
+                    if facts.get("type") == "file" and FilenameProcessor._match_name_pattern(file_name, target_name_pattern):
                         files.append((file_name))
             except (error_perm, AttributeError): # 如果 MLSD 不可用，使用 nlst
                 self._log('warning', "MLSD 不可用，使用 nlst 列出檔案")
