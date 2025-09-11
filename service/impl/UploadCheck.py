@@ -25,6 +25,7 @@ from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
 from dao.impl.JdbcDaoImpl import JdbcDaoImpl
 from crypto.Aes256Crypto import *
 import jaydebeapi
+import traceback
 
 class UploadCheckImpl(UploadCheck):
 
@@ -107,7 +108,8 @@ class UploadCheckImpl(UploadCheck):
         Logger.Logger(log_dir, log_name)  # 模組日誌
         return logging.getLogger(log_name)
 
-    def errorExit(self, error_message):
+    def errorExit(self, error_message, error_traceback = ''):
+        self.logger.debug(error_traceback)
         self.logger.error(error_message)
         #self.errorHandler.exceptionWriter(error_message)
         exit(1)
@@ -179,20 +181,30 @@ class UploadCheckImpl(UploadCheck):
 
         #Read source control table
         check_cnt = 0
-        sql = "select * from {}.{} where lower(table_name) = '{}' order by time desc".format(
-            self.src_db, self.src_ctl_table, self.src_table.lower() )
+        sql = "select * from {}.{} where lower(table_name) = '{}' and {} = '{}' order by batch_time desc".format(
+            self.src_db, self.src_ctl_table, self.src_table.lower(), self.check_col, self.batch_date )
         self.logger.debug(f"[SQL] {sql}")
+        check_row = None
         try:
             cursor = dao.conn.cursor()
             cursor.execute(sql)
-            rows = cursor.fetchmany(1)
-            self.logger.info("[Control table] " + str(rows))
-            check_cnt = rows[0][3]
+            rs = cursor.fetchmany(1)
+            if rs:
+                check_row = rs[0]
+            else:
+                self.errorExit(f"[找不到{self.batch_date}的檢核資料]")
+            self.logger.info("[Control table] " + str(check_row))
+            check_cnt = int(check_row[0])
         except Exception as e:
-            self.errorExit(f'[讀取control table失敗] {e}')
+            error_traceback = traceback.format_exc()
+            self.errorExit(f'[讀取control table失敗] {e}', error_traceback)
+
         finally:
             if cursor:
                 cursor.close()
+
+        if self.src_ignoer_zero.lower() == 'n' and check_cnt == 0 :
+            self.errorExit(f"[{self.batch_date}的檢核筆數為零]")
 
         #Check count for source table
         total_cnt = 0
@@ -205,7 +217,8 @@ class UploadCheckImpl(UploadCheck):
             total_cnt = rows[0][0]
             self.logger.info(f"[來源筆數: {total_cnt}]")
         except Exception as e:
-            self.errorExit(f'[檢查筆數失敗] {e}')
+            error_traceback = traceback.format_exc()
+            self.errorExit(f'[檢查筆數失敗] {e}', error_traceback)
         finally:
             if cursor:
                 cursor.close()
@@ -217,6 +230,16 @@ class UploadCheckImpl(UploadCheck):
         #Insert data from source table to target table
         source_table = f'{self.src_db}.{self.src_table}'
         target_table = f'{self.tg_db}.{self.tg_table}'
-        self.insertData(dao.conn, source_table, target_table)
+        if total_cnt > 0:
+            self.insertData(dao.conn, source_table, target_table)
 
         #Write target control table
+        sql = "insert into {}.{} values(?, ?, ?, ?)".format(self.tg_db, self.tg_ctl_table)
+        try:
+            cursor = dao.conn.cursor()
+            cursor.execute(sql, check_row)
+        except Exception as e:
+            self.errorExit(f'[寫入{self.tg_ctl_table}失敗] {e}')
+        finally:
+            if cursor:
+                cursor.close()
