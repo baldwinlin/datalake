@@ -162,7 +162,8 @@ class UploadCheckImpl(UploadCheck):
             # 3. 執行單一 SQL 語法
             cursor.execute(sql_insert_select)
             affected_rows = cursor.rowcount
-            self.logger.info(f'[Insert資料完成，寫入筆數: {affected_rows}]')
+            #self.logger.info(f'[Insert資料完成，寫入筆數: {affected_rows}]') #Hive無法回傳執行筆數
+            self.logger.info(f'[Insert資料完成]')
 
         except Exception as e:
             self.errorExit(f"[Insert資料失敗] {e}")
