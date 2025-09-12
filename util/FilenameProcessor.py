@@ -9,11 +9,11 @@ class FilenameProcessor:
         if not name_pattern:
             raise Exception("尚未正確設定檔案名稱模式")
 
-        if "${date}" in name_pattern:
+        if "${batch_date}" in name_pattern:
             if date is None:
                 raise Exception("需要置換日期，但尚未正確提供參數 date")
 
-        processed_name_pattern = name_pattern.replace("${date}", str(date))
+        processed_name_pattern = name_pattern.replace("${batch_date}", str(date))
         return processed_name_pattern
     
     @staticmethod

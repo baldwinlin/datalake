@@ -39,7 +39,7 @@ class FtpLoaderImpl(FtpLoader):
         self.pc_config = pc_config
         self.main_config = main_config
         self.args = json.loads(args)
-        self.date =str(self.args.get('batch_date'))
+        self.batch_date =str(self.args.get('batch_date'))
         self.logger_main = None
         self.logger_prefix = self.pc_config["LOG"].get("LOG_PREFIX")
         if not self.logger_prefix:
@@ -84,14 +84,14 @@ class FtpLoaderImpl(FtpLoader):
             self.port = int(self.fc_config.get('FTP','FTP_PORT'))
             self.ftp_type = self.fc_config.get('FTP','FTP_TYPE')
             #測試時需要解開註解
-            # self.user = self.fc_config.get('FTP','FTP_USER')
-            # self.sec = self.fc_config.get('FTP','FTP_SEC')
+            self.user = self.fc_config.get('FTP','FTP_USER')
+            self.sec = self.fc_config.get('FTP','FTP_SEC')
             #正式環境 正式執行需解開註解
-            self.ftp_sec_file = self.fc_config.get('FTP','FTP_SEC_FILE')
-            self.ftp_key_file = self.fc_config.get('FTP','FTP_SEC_KEY')
-            self.user, self.sec_str = readSecFile(self.ftp_sec_file)
-            self.ftp_salt = readSaltFile(self.ftp_key_file)
-            self.sec = get_gpg_decrypt(self.sec_str, self.ftp_salt)
+            # self.ftp_sec_file = self.fc_config.get('FTP','FTP_SEC_FILE')
+            # self.ftp_key_file = self.fc_config.get('FTP','FTP_SEC_KEY')
+            # self.user, self.sec_str = readSecFile(self.ftp_sec_file)
+            # self.ftp_salt = readSaltFile(self.ftp_key_file)
+            # self.sec = get_gpg_decrypt(self.sec_str, self.ftp_salt)
         except Exception as e:
             raise Exception(f"讀取FTP config錯誤: {e}")
 
@@ -137,7 +137,7 @@ class FtpLoaderImpl(FtpLoader):
                 self.controller_file_delimiter = self.pc_config.get('SOURCE','CTL_FILE_DELIMITER')
                 if self.controller_file_delimiter == "":
                     self.controller_file_delimiter = None
-                if self.date == "" or self.date == "None" or len(self.date) != 8:
+                if self.batch_date == "" or self.batch_date == "None" or len(self.batch_date) != 8:
                     raise Exception("有控制檔，但尚未正確設定 Batch Date")
             else:
                 self.controller_file_name_pattern = None
@@ -244,9 +244,9 @@ class FtpLoaderImpl(FtpLoader):
         self.logger_main.debug(f"開始檢查下載檔案行數.....")
         self.controller_file_rows_count, self.total_rows_count = self._getDownloadedFileRowsCount(download_files_list)
         if self.controller_file == "Y":
-            self.logger_main.debug(f"檢查控制檔行數完成，控制檔行數: {self.controller_file_rows_count}，下載的檔案總行數: {self.total_rows_count}")
+            self.logger_main.info(f"檢查控制檔行數完成，控制檔行數: {self.controller_file_rows_count}，下載的檔案總行數: {self.total_rows_count}")
         elif self.controller_file == "N":
-            self.logger_main.debug(f"檢查下載檔案總行數完成，下載檔案總行數: {self.total_rows_count}")
+            self.logger_main.info(f"檢查下載檔案總行數完成，下載檔案總行數: {self.total_rows_count}")
 
         if self.controller_file == "Y":
             self._checkDownloadedFileRowsCount()
@@ -353,7 +353,7 @@ class FtpLoaderImpl(FtpLoader):
 
     def getFtpFileList(self):
         try:
-            files = self.ftp_dao.listFiles(self.source_path, self.name_pattern, self.date)
+            files = self.ftp_dao.listFiles(self.source_path, self.name_pattern, self.batch_date)
         except Exception as e:
             self.errorExit(f"列出 FTP/SFTP Server 的檔案失敗 {e}")
         return files
@@ -551,7 +551,7 @@ class FtpLoaderImpl(FtpLoader):
             if is_controller_file:
                 controller_file_path = os.path.join(self.temp_processing_path, file_name)
                 try:
-                    result = Validator.check_header_batch_date(controller_file_path, self.controller_file_delimiter, self.date)
+                    result = Validator.check_header_batch_date(controller_file_path, self.controller_file_delimiter, self.batch_date)
                     return file_name
                 except Exception as e:
                     self.errorExit(f"檢查控制檔日期失敗 {e}")
@@ -594,6 +594,7 @@ class FtpLoaderImpl(FtpLoader):
         return True
 
     def _checkRowsLength(self, processing_files_list):
+
         problematic_row_length_file_list = []
         error_files_list = []
         for file_name in processing_files_list:
