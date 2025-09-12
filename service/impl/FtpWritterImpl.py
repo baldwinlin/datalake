@@ -143,9 +143,9 @@ class FtpWritterImpl(FtpWritter):
         self.tg_new_line_character = "\n" if pc_config.get('TARGET', 'NEW_LINE_CHARACTER', fallback=None) == "\\n" else "\r\n"
         self.tg_encoding = pc_config.get('TARGET', 'ENCODING', fallback=None)
         self.tg_col_size_file = pc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
-        self.tg_header = pc_config.get('TARGET', 'HEADER', fallback=None)
+        self.tg_header = pc_config.get('TARGET', 'HEADER', fallback='N')
         self.tg_bucket = pc_config.get('TARGET', 'BUCKET', fallback=None)
-        self.tg_ctl_file = pc_config.get('TARGET', 'CTL_FILE', fallback=None)
+        self.tg_ctl_file = pc_config.get('TARGET', 'CTL_FILE', fallback='N')
         self.tg_ctl_file_name_pattern = pc_config.get('TARGET', 'CTL_FILE_NAME_PATTERN', fallback=None)
         self.tg_ctl_chinese= pc_config.get('TARGET', 'CHINESE-SW', fallback='Y')
 
@@ -426,7 +426,7 @@ class FtpWritterImpl(FtpWritter):
 
 
     def replaceArg(self, src_string):
-        if (self.args_str is not None):
+        if (self.args_str is not None and src_string is not None):
             for key, value in self.args_dict.items():
                 src_string = src_string.replace(key, value)
         return src_string
@@ -440,7 +440,7 @@ class FtpWritterImpl(FtpWritter):
         sql_str = self.readSqlFile()
         self.logger.debug(f'[執行SQL]\n{sql_str}')
         out_file = self.temp_path / self.replaceArg(self.tg_name_pattern)
-        out_file_ctl = self.temp_path / self.replaceArg(self.tg_ctl_file_name_pattern)
+
         process_cnt = 0
         if (self.tg_delimiter):  # Export file with delimiter
             process_cnt = self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter,
