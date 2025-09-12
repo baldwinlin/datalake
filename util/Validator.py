@@ -8,25 +8,16 @@ import os
 class Validator:
 
     @staticmethod
-    def get_file_line_count(file_name:str, file_path:str, header_line:str, controller_file_delimiter:str = None, controller_file_name_pattern:str = None):
+    def get_file_line_count(file_name:str, file_path:str, controller_file_delimiter:Optional[str] = None, controller_file_name_pattern:Optional[str] = None):
         if FilenameProcessor.is_controller_file(file_name, controller_file_name_pattern): 
             controller_file_path = os.path.join(file_path, file_name)
             expected_records = Validator._read_CTF_rows_data(controller_file_path, controller_file_delimiter)
-            if header_line == "Y":
-                with_header_expected_records = expected_records
-                return ("檢核檔", file_name, expected_records,f"包含 Header 總計筆數{with_header_expected_records}")
-            else:
-                return ("檢核檔", file_name, expected_records,f"不包含 Header 總計筆數{expected_records}")
+            return ("檢核檔", file_name, expected_records,f"不包含 Header 總計筆數")
         else:
             file_path = os.path.join(file_path, file_name)
             with open(file_path, "rb") as f:
                 downloaded_lines_count = len(f.readlines())
-            if header_line == "Y":
-                with_header_count = downloaded_lines_count
-                downloaded_lines_count -= 1
-                return ( "檔案", file_name , downloaded_lines_count, f"包含 Header 總計筆數{with_header_count}")
-            else:
-                return ( "檔案", file_name , downloaded_lines_count, f"不包含 Header 總計筆數{downloaded_lines_count}")
+            return ( "檔案", file_name , downloaded_lines_count, f"總計筆數{downloaded_lines_count}")
     
     @staticmethod
     def _read_CTF_rows_data(controller_file_path: str, controller_file_delimiter: str) -> int:
