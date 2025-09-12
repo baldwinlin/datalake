@@ -115,7 +115,7 @@ class FtpDaoImpl(FileDao):
                 self.FTP.cwd(source_path)
                 try:
                     for file_name in self.FTP.nlst():
-                        if self._match_name_pattern(file_name, target_name_pattern):
+                        if FilenameProcessor._match_name_pattern(file_name, target_name_pattern):
                             files.append(file_name)
                 except Exception as e:
                     raise Exception(f"NLST 列出檔案失敗: {e}")
@@ -126,7 +126,7 @@ class FtpDaoImpl(FileDao):
                 file_name = file_info.filename
                 if (not file_name.startswith('.') and 
                     S_ISREG(file_info.st_mode) and 
-                    self._match_name_pattern(file_name, target_name_pattern)):
+                    FilenameProcessor._match_name_pattern(file_name, target_name_pattern)):
                     files.append(file_name)
             return files
 

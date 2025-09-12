@@ -48,6 +48,7 @@ class FtpLoaderImpl(FtpLoader):
         self.expected_row_length = 0
         self.total_rows_count = 0
         self.controller_file_rows_count = 0
+        self.file_counts = 0
 
         """建立暫存工作目錄"""
         try:
@@ -83,14 +84,14 @@ class FtpLoaderImpl(FtpLoader):
             self.port = int(self.fc_config.get('FTP','FTP_PORT'))
             self.ftp_type = self.fc_config.get('FTP','FTP_TYPE')
             #測試時需要解開註解
-            self.user = self.fc_config.get('FTP','FTP_USER')
-            self.sec = self.fc_config.get('FTP','FTP_SEC')
+            # self.user = self.fc_config.get('FTP','FTP_USER')
+            # self.sec = self.fc_config.get('FTP','FTP_SEC')
             #正式環境 正式執行需解開註解
-            # self.ftp_sec_file = self.fc_config.get('FTP','FTP_SEC_FILE')
-            # self.ftp_key_file = self.fc_config.get('FTP','FTP_SEC_KEY')
-            # self.user, self.sec_str = readSecFile(self.ftp_sec_file)
-            # self.ftp_salt = readSaltFile(self.ftp_key_file)
-            # self.sec = get_gpg_decrypt(self.sec_str, self.ftp_salt)
+            self.ftp_sec_file = self.fc_config.get('FTP','FTP_SEC_FILE')
+            self.ftp_key_file = self.fc_config.get('FTP','FTP_SEC_KEY')
+            self.user, self.sec_str = readSecFile(self.ftp_sec_file)
+            self.ftp_salt = readSaltFile(self.ftp_key_file)
+            self.sec = get_gpg_decrypt(self.sec_str, self.ftp_salt)
         except Exception as e:
             raise Exception(f"讀取FTP config錯誤: {e}")
 
@@ -201,67 +202,92 @@ class FtpLoaderImpl(FtpLoader):
 
         
         """列出的檔案"""       
+        self.logger_main.info(f"開始列出 FTP/SFTP Server 的檔案.....")
         files_list = self.getFtpFileList()
         if not files_list:
             self.errorExit("沒有找到符合條件的檔案")
-        self.logger_main.info(f"指定的檔案列表: {files_list}")
+        self.logger_main.info(f"完成找到指定的檔案列表: {files_list}")
 
         """下載檔案"""
+        self.logger_main.info(f"開始下載檔案至暫存區.....")
         download_files_list = self.downloadFtpFile(files_list)
         if not download_files_list:
             self.errorExit("沒有成功下載指定的檔案")
         self.logger_main.info(f"完成下載檔案至暫存區: {download_files_list}")
         
-
         """壓縮檔解壓縮"""
         if self.name_pattern.lower().endswith((".zip", ".7z", ".tar", ".gz", ".tgz", ".tar.gz")):
+            self.logger_main.info(f"開始解壓縮檔案.....")
             unzip_files_list  = self.unzipFile(download_files_list)
             download_files_list = unzip_files_list 
             self.logger_main.info(f"解壓縮檔案完成，檔案暫存至處理區，解壓縮後的檔案列表: {unzip_files_list}")
         else:
             for file_name in download_files_list:
                 shutil.copy(os.path.join(self.temp_download_path, file_name), os.path.join(self.temp_processing_path, file_name))
-            self.logger_main.info(f"檔案暫存至處理區，檔案列表: {download_files_list}")
+            self.logger_main.info(f"無需解壓縮，檔案暫存至處理區，檔案列表: {download_files_list}")
+
+        self.file_counts = len(download_files_list)
+        if self.controller_file == "Y":
+            self.file_counts -= 1
+        self.logger_main.debug(f"本次執行檔案數量: {self.file_counts}")
         
         """驗證控制檔日期"""
         if self.controller_file == "Y":
-            controller_file_name = self.checkBatchDate(download_files_list)
+            self.logger_main.debug(f"開始檢查控制檔日期.....")
+            controller_file_name = self._checkBatchDate(download_files_list)
             if controller_file_name is None:
                 self.errorExit(f"控制檔日期檢查失敗可能設定檔有誤或是沒有控制檔")
-            self.logger_main.info(f"控制檔日期檢查 {controller_file_name} 配置正確")
+            self.logger_main.debug(f"控制檔日期檢查 {controller_file_name} 配置正確")
+            self.logger_main.debug(f"完成檢查控制檔日期")
 
         """驗證下載檔案行數"""
-        self.checkFileRows(download_files_list)
+        self.logger_main.debug(f"開始檢查下載檔案行數.....")
+        self.controller_file_rows_count, self.total_rows_count = self._getDownloadedFileRowsCount(download_files_list)
+        if self.controller_file == "Y":
+            self.logger_main.debug(f"檢查控制檔行數完成，控制檔行數: {self.controller_file_rows_count}，下載的檔案總行數: {self.total_rows_count}")
+        elif self.controller_file == "N":
+            self.logger_main.debug(f"檢查下載檔案總行數完成，下載檔案總行數: {self.total_rows_count}")
+
+        if self.controller_file == "Y":
+            self._checkDownloadedFileRowsCount()
+            if self.header == "Y":
+                self.logger_main.debug(f"扣除標題欄位行數後檢查檔案行數完成，檔案行數正確")
+            elif self.header == "N":
+                self.logger_main.debug(f"無標題欄位行數。檢查檔案行數完成，檔案行數正確")
         
+        self.logger_main.debug(f"開始過濾掉控制檔.....")
+
         """過濾掉控制檔"""
-        processing_files_list = self.filteFIles(download_files_list)
+        self.logger_main.debug(f"過濾掉控制檔...")
+        processing_files_list = self._fileFilter(download_files_list)
         self.logger_main.info(f"需轉換的檔案列表: {processing_files_list}")
+        self.logger_main.debug(f"完成過濾掉控制檔")
 
         """解碼驗證"""
-        result = self.checkDecodeValid(processing_files_list)
+        self.logger_main.debug(f"開始檢查檔案編碼.....")
+        result = self._checkDecodeValid(processing_files_list)
         if result == True:
-            self.logger_main.info(f"檔案編碼檢查完成，檔案列表: {processing_files_list}")
-        
-        """解碼後檢查檔案行數"""
-        self.processCheckFileRows(processing_files_list, self.header)
-        self.logger_main.info(f"解碼驗證的檔案行數檢查完成，檔案行數總和: {self.total_rows_count}")
+            self.logger_main.debug(f"檔案編碼檢查完成，檔案列表: {processing_files_list}")
 
         """移除欄位標題"""
         if self.header == "Y":
+            self.logger_main.info(f"開始移除欄位標題.....")
             result = self.removeHeaderLine(processing_files_list)
             if result == True:
                 self.logger_main.info(f"完成移除欄位標題行")
-                """移除欄位後後檢查檔案行數"""
-                self.processCheckFileRows(processing_files_list, "N")
-                self.logger_main.info(f"移除欄位標題，檔案行數檢查完成，轉換後的檔案行數總和: {self.total_rows_count}")
+                self.logger_main.debug(f"開始檢查移除欄位標題後的檔案行數.....")
+                self._checkMessage(processing_files_list, "移除欄位標題")
+                self.logger_main.debug(f"移除欄位標題後行數檢查完成")
        
         """檔案資料長度檢查（固定長度檔案）"""
+        self.logger_main.debug(f"開始檔案每筆資料長度檢查.....")
         if self.col_size_file:
-            result = self.checkRowsLength(processing_files_list)
+            result = self._checkRowsLength(processing_files_list)
             if result is True:
-                self.logger_main.info(f"驗證每筆資料長度完成，開始插入分隔符號")
+                self.logger_main.debug(f"驗證每筆資料長度完成")
 
         """檔案分隔"""
+        self.logger_main.info(f"開始檔案分隔處理.....")
         if self.col_size_file:
             if self.delimiter:
                 self.logger_main.info(f"指定使用分隔符號{self.delimiter}進行固定欄位寬度檔案分隔")
@@ -274,33 +300,34 @@ class FtpLoaderImpl(FtpLoader):
         if self.col_size_file and self.delimiter:
             result = self.insertDelimiter(processing_files_list)
             if result:
-                self.processCheckFileRows(processing_files_list, "N")
-                self.logger_main.info(f"置入分隔符號後行數檢查完成，檔案行數總和: {self.total_rows_count}")
-
-
+                self.logger_main.info(f"置入分隔符號完成")
+                self.logger_main.debug(f"開始檢查置入分隔符號後的檔案行數.....")
+                self._checkMessage(processing_files_list, "置入分隔符號")
+                self.logger_main.debug(f"置入分隔符號後行數檢查完成")
 
         """檔案轉碼"""
         reformated_files_list = []
         if self.encoding == "big5":
-            result = self.reformatFile(processing_files_list)
+            self.logger_main.info(f"開始檔案轉碼處理.....")
+            result = self.reformatEncoding(processing_files_list)
             reformated_files_list = result
             if result:
-                self.processCheckFileRows(processing_files_list, "N")
-                self.logger_main.info(f"轉換編碼後，行數檢查完成，檔案行數總和: {self.total_rows_count}")
+                self.logger_main.debug(f"開始檢查轉換編碼後的檔案行數.....")
+                self._checkMessage(processing_files_list, "轉換編碼")
+                self.logger_main.debug(f"轉換編碼後，行數檢查完成")
         elif self.encoding == "utf-8":
-            reformated_files_list = processing_files_list
             self.logger_main.info(f"編碼為 utf-8，不需要轉換")
-
-
+            reformated_files_list = processing_files_list
+            
+        """複製檔案到上傳目錄"""
         for file in reformated_files_list:
             temp_processing_file_path = os.path.join(self.temp_processing_path, file)
             temp_upload_file_path = os.path.join(self.temp_upload_path, file)
             shutil.copy(temp_processing_file_path, temp_upload_file_path)
 
-
-     
         """上傳檔案到S3"""
         error_upload_files_list = []
+        self.logger_main.info(f"開始上傳檔案到S3.....")
         for file_name in reformated_files_list:
             try:
                 self.writeToS3(file_name)
@@ -312,6 +339,7 @@ class FtpLoaderImpl(FtpLoader):
             self.errorExit(f"上傳檔案失敗錯誤表 {error_upload_files_list}")
 
         time.sleep(10)
+        self.logger_main.info(f"開始清空暫存目錄.....")
         CleanTempFile.remove_temp_operation_directory(self.temp_operation_folder_path)
         self.logger_main.info("清空暫存目錄完成。") 
         
@@ -361,137 +389,6 @@ class FtpLoaderImpl(FtpLoader):
             self.errorExit(f"解壓縮檔案失敗 {error_unzip_files_list}")
         return unzip_files_list 
 
-    def checkBatchDate(self, download_files_list):
-        for file_name in download_files_list:
-            try:
-                is_controller_file = FilenameProcessor.is_controller_file(file_name, self.controller_file_name_pattern)
-            except Exception as e:
-                self.errorExit(f"檢查檔案是否為控制檔失敗 {e}")
-
-            if is_controller_file:
-                controller_file_path = os.path.join(self.temp_processing_path, file_name)
-                try:
-                    result = Validator.check_header_batch_date(controller_file_path, self.controller_file_delimiter, self.date)
-                    return file_name
-                except Exception as e:
-                    self.errorExit(f"檢查控制檔日期失敗 {e}")
-    
-    def checkFileRows(self, download_files_list):
-        """讀出下載檔案行數"""
-        file_rows_counts_info = []
-        file_counts = 0
-        with_header_expected_rows_count = 0
-        for file_name in download_files_list:
-            try:
-                result = Validator.get_file_line_count(file_name, self.temp_processing_path, self.header, self.controller_file_delimiter, self.controller_file_name_pattern)
-                file_rows_counts_info.append(result)
-               
-                if result[0] == "檢核檔":
-                    with_header_expected_rows_count += result[2]
-                    self.controller_file_rows_count = result[2] #紀錄正確筆數至Attribute利於後續驗證
-                if result[0] == "檔案":
-                    self.logger_main.info(f"檔案行數檢查完成，{result[0]}: {result[1]}下載檔案行數紀錄，{result[3]}")
-                    file_counts += 1
-
-            except Exception as e:
-                self.errorExit(f"計算檔案行數失敗 {file_name} {e}")
-        
-        if self.header == "Y" and self.controller_file == "Y":
-            with_header_expected_rows_count += file_counts
-            self.logger_main.info(f"控制檔預期筆數：{with_header_expected_rows_count}")
-        elif self.header == 'N' and self.controller_file == "Y":
-            self.logger_main.info(f"控制檔預期筆數：{with_header_expected_rows_count}")
-        
-
-        
-
-        """檢查檔案行數是否符合控制檔設置的筆數"""
-        if self.controller_file == "Y":
-            try:
-                result = Validator.check_file_line_count(file_rows_counts_info)
-            except Exception as e:
-                self.errorExit(f"檔案行數檢查失敗 {e}")
-            if result == True:
-                self.logger_main.info("核對明細檔和控制檔筆數正確")
-        elif self.controller_file == 'N':
-            for kind, fname, rows_count, _ in file_rows_counts_info:
-                self.total_rows_count += rows_count
-            self.logger_main.info(f"檔案行數檢查完成，下載檔案行數總和: {self.total_rows_count}")
-    
-    def processCheckFileRows(self, processing_files_list, header_line):
-        error_files_list = []
-        proccessing_rows_count = 0
-        file_counts = 0
-        """讀出下載檔案行數"""
-        file_rows_counts_info = []
-        for file_name in processing_files_list:
-            try:
-                result = Validator.get_file_line_count(file_name, self.temp_processing_path, header_line, None, None)
-                file_rows_counts_info.append(result)
-                proccessing_rows_count += result[2]
-                file_counts += 1
-                self.logger_main.info(f"檔案行數檢查完成，{result[0]}: {result[1]}下載檔案行數紀錄，{result[3]}")
-            except Exception as e:
-                self.logger_main.error(f"檢查檔案行數失敗 {file_name} {e}")
-                error_files_list.append(file_name)
-
-        if len(error_files_list) > 0:
-            self.errorExit(f"計算檔案行數失敗 {error_files_list}")
-
-        """檢查檔案行數是否符合控制檔設置的筆數"""
-        if self.controller_file == "Y":
-            if proccessing_rows_count != self.controller_file_rows_count:
-                self.errorExit(f"檔案行數不符，預期筆數：{self.controller_file_rows_count}，實際筆數：{proccessing_rows_count}")
-        elif self.controller_file == 'N':
-            if proccessing_rows_count != self.total_rows_count:
-                self.errorExit(f"檔案行數不符，預期筆數：{self.total_rows_count}，實際筆數：{proccessing_rows_count}")
-        
-        
-
-        if header_line == "Y":
-            with_header_counts = proccessing_rows_count + file_counts
-            self.total_rows_count = with_header_counts
-        elif header_line == "N":
-            self.total_rows_count = proccessing_rows_count
-        
-
-    def filteFIles(self, download_files_list):
-        processing_files_list = []
-        if self.controller_file == "Y":
-            for file_name in download_files_list:
-                try:
-                    is_controller_file = FilenameProcessor.is_controller_file(file_name, self.controller_file_name_pattern)
-                except Exception as e:
-                    self.errorExit(f"過濾控制檔名稱失敗 {file_name} {e}")
-                if is_controller_file:
-                    continue
-                processing_files_list.append(file_name)
-        else:
-            processing_files_list = download_files_list.copy()
-        return processing_files_list
-
-    def checkDecodeValid(self, processing_files_list):
-        problematic_files_list = []
-        error_files_list = []
-        for file_name in processing_files_list:
-            try:
-                file_path = os.path.join(self.temp_processing_path, file_name)
-                problematic_lines = Validator.checking_decoding(file_path, self.encoding)
-                if len(problematic_lines) > 0:
-                    self.logger_main.error(f"檔案 {file_name} 有 {len(problematic_lines)} 行資料有解碼問題，標題欄位是第0行，請根據以下行數檢查資料{problematic_lines} ")
-                    problematic_files_list.append(file_name)
-            except Exception as e:
-                self.logger_main.error(f"檢查檔案編碼失敗 {file_name} {e}")
-                error_files_list.append(file_name)
-       
-        if len(error_files_list) > 0:
-            self.errorExit(f"檢查檔案編碼失敗 {error_files_list}") 
-        
-        if len(problematic_files_list) > 0 :
-            self.errorExit(f"檢查檔案編碼完畢，以下是有錯誤編碼的檔案 {problematic_files_list}")
-        
-        return True
-
     def removeHeaderLine(self, processing_files_list):
         error_files_list = []
         for file_name in processing_files_list:
@@ -507,34 +404,10 @@ class FtpLoaderImpl(FtpLoader):
 
         return True
 
-    def checkRowsLength(self, processing_files_list):
-        problematic_row_length_file_list = []
-        error_files_list = []
-        for file_name in processing_files_list:
-            try: 
-                temp_processing_file_path = os.path.join(self.temp_processing_path, file_name)
-                error_lines = Validator.checking_row_length(temp_processing_file_path, self.col_size_file)
-                if error_lines is not True:
-                    problem_file = (file_name, error_lines)
-                    problematic_row_length_file_list.append(problem_file)
-            except Exception as e:
-                self.logger_main.error(f"檢查檔案每筆長度出現錯誤 {file_name} {e}")
-                error_files_list.append(file_name)
-        
-        if len(error_files_list) > 0:
-            self.errorExit(f"檢查檔案每筆長度失敗 {error_files_list}")
-        
-        if len(problematic_row_length_file_list) > 0:
-            self.errorExit(f"出現資料長度不符合規範的檔案，請確認出錯位置 {problematic_row_length_file_list}")
-        elif len(problematic_row_length_file_list) == 0:
-            return True
-
     def insertDelimiter(self, processing_files_list):
         error_files_list = []
         for file in processing_files_list:
             temp_processing_file_path = os.path.join(self.temp_processing_path, file)
-
-            """檢查檔案是否已經為已經有分隔符號的檔案，如果是則不需要插入分隔符號，檔案暫存於 temp_processing_file_path"""
             try:
                 Reformatter.insert_delimiter_with_sizes_file(temp_processing_file_path, self.col_size_file, temp_processing_file_path, self.delimiter)
             except Exception as e:
@@ -544,10 +417,9 @@ class FtpLoaderImpl(FtpLoader):
         if len(error_files_list) > 0:
             self.errorExit(f"插入分隔符號失敗的檔案列表 {error_files_list}")
         else:
-            self.logger_main.info(f"{file} 插入分隔符號完成")
             return True
                 
-    def reformatFile(self, processing_files_list):
+    def reformatEncoding(self, processing_files_list):
         error_files_list = []
         reformated_files_list = []
         for file in processing_files_list:
@@ -583,3 +455,162 @@ class FtpLoaderImpl(FtpLoader):
 
     def close(self):
         self.ftp_dao.close()
+
+    
+    def _getDownloadedFileRowsCount(self, download_files_list):
+        file_rows_counts_info = []
+        controller_file_rows_count = 0
+        total_rows_count = 0
+        for file_name in download_files_list:
+            try:
+                result = Validator.get_file_line_count(file_name, self.temp_processing_path, self.controller_file_delimiter, self.controller_file_name_pattern)
+                file_rows_counts_info.append(result)
+                if result[0] == "檔案":
+                    self.logger_main.info(f"檔案行數檢查，{result[0]}: {result[1]}，{result[3]}")
+                    total_rows_count += result[2]
+                if result[0] == "檢核檔":
+                    controller_file_rows_count = result[2]
+            except Exception as e:
+                self.errorExit(f"計算檔案行數失敗 {file_name} {e}")
+        
+        if self.controller_file == "Y":
+            return controller_file_rows_count, total_rows_count
+        elif self.controller_file == "N":
+            return 0, total_rows_count
+        
+    def _checkDownloadedFileRowsCount(self):
+        """檢查檔案行數是否符合控制檔設置的筆數"""
+        total_rows_count = self.total_rows_count
+        if self.header == "Y":
+            total_rows_count -= self.file_counts
+            if total_rows_count != self.controller_file_rows_count:
+                self.errorExit(f"檔案行數不符，預期筆數：{self.controller_file_rows_count}，實際筆數(扣標題欄位數量)：{total_rows_count}")
+        elif self.header == "N":
+            if total_rows_count != self.controller_file_rows_count:
+                self.errorExit(f"檔案行數不符，預期筆數：{self.controller_file_rows_count}，實際筆數：{self.total_rows_count}")
+        return True
+
+    def _getProcessedFileRowsCount(self, processing_files_list):
+        error_files_list = []
+        file_rows_counts_info = []
+        proccessing_rows_count = 0
+        for file_name in processing_files_list:
+            try:
+                result = Validator.get_file_line_count(file_name, self.temp_processing_path)
+                file_rows_counts_info.append(result)
+                proccessing_rows_count += result[2]
+                self.logger_main.info(f"檔案行數檢查，{result[0]}: {result[1]} 檔案處理後行數紀錄：{result[3]}")
+            except Exception as e:
+                self.logger_main.error(f"檢查檔案行數失敗 {file_name} {e}")
+                error_files_list.append(file_name)
+
+        if len(error_files_list) > 0:
+            self.errorExit(f"計算檔案行數失敗 {error_files_list}")
+
+        return proccessing_rows_count
+    
+    def _checkWithControllerFileRows(self, proccessing_rows_count):
+        if proccessing_rows_count != self.controller_file_rows_count:
+            return False
+        elif proccessing_rows_count == self.controller_file_rows_count:
+            return True
+    
+    def _checkWithTotalRowsCount(self, proccessing_rows_count, expected_rows_count):
+        if proccessing_rows_count != expected_rows_count:
+            return False
+        elif proccessing_rows_count == expected_rows_count:
+            return True
+    
+    def _checkMessage(self, processing_files_list, process_state):
+        proccessing_rows_count = self._getProcessedFileRowsCount(processing_files_list)
+        if self.controller_file == "Y":
+            if self._checkWithControllerFileRows(proccessing_rows_count):
+                self.total_rows_count = proccessing_rows_count
+                self.logger_main.info(f"和控制檔預期行數比對正確，處理後的檔案行數總和: {self.total_rows_count}")
+            else:
+                self.errorExit(f"和控制檔預期行數比對不符，預期筆數：{self.controller_file_rows_count}，實際筆數：{proccessing_rows_count}，出錯流程：{process_state}")
+        elif self.controller_file == "N":
+            expected_rows_count = self.total_rows_count
+            if process_state == "移除欄位標題":
+                expected_rows_count -= self.file_counts
+            if self._checkWithTotalRowsCount(proccessing_rows_count, expected_rows_count):
+                self.total_rows_count = proccessing_rows_count
+                self.logger_main.info(f"和總行數比對正確，處理後的檔案行數總和: {self.total_rows_count}")
+            else:
+                self.errorExit(f"和總行數比對不符，預期筆數：{expected_rows_count}，實際筆數：{proccessing_rows_count}，出錯流程：{process_state}")
+
+    
+
+    def _checkBatchDate(self, download_files_list):
+        for file_name in download_files_list:
+            try:
+                is_controller_file = FilenameProcessor.is_controller_file(file_name, self.controller_file_name_pattern)
+            except Exception as e:
+                self.errorExit(f"檢查檔案是否為控制檔失敗 {e}")
+
+            if is_controller_file:
+                controller_file_path = os.path.join(self.temp_processing_path, file_name)
+                try:
+                    result = Validator.check_header_batch_date(controller_file_path, self.controller_file_delimiter, self.date)
+                    return file_name
+                except Exception as e:
+                    self.errorExit(f"檢查控制檔日期失敗 {e}")
+
+    def _fileFilter(self, download_files_list):
+        processing_files_list = []
+        if self.controller_file == "Y":
+            for file_name in download_files_list:
+                try:
+                    is_controller_file = FilenameProcessor.is_controller_file(file_name, self.controller_file_name_pattern)
+                except Exception as e:
+                    self.errorExit(f"過濾控制檔名稱失敗 {file_name} {e}")
+                if is_controller_file:
+                    continue
+                processing_files_list.append(file_name)
+        else:
+            processing_files_list = download_files_list.copy()
+        return processing_files_list
+
+    def _checkDecodeValid(self, processing_files_list):
+        problematic_files_list = []
+        error_files_list = []
+        for file_name in processing_files_list:
+            try:
+                file_path = os.path.join(self.temp_processing_path, file_name)
+                problematic_lines = Validator.checking_decoding(file_path, self.encoding)
+                if len(problematic_lines) > 0:
+                    self.logger_main.error(f"檔案 {file_name} 有 {len(problematic_lines)} 行資料有解碼問題，標題欄位是第0行，請根據以下行數檢查資料{problematic_lines} ")
+                    problematic_files_list.append(file_name)
+            except Exception as e:
+                self.logger_main.error(f"檢查檔案編碼失敗 {file_name} {e}")
+                error_files_list.append(file_name)
+       
+        if len(error_files_list) > 0:
+            self.errorExit(f"檢查檔案編碼失敗 {error_files_list}") 
+        
+        if len(problematic_files_list) > 0 :
+            self.errorExit(f"檢查檔案編碼完畢，以下是有錯誤編碼的檔案 {problematic_files_list}")
+        
+        return True
+
+    def _checkRowsLength(self, processing_files_list):
+        problematic_row_length_file_list = []
+        error_files_list = []
+        for file_name in processing_files_list:
+            try: 
+                temp_processing_file_path = os.path.join(self.temp_processing_path, file_name)
+                error_lines = Validator.checking_row_length(temp_processing_file_path, self.col_size_file)
+                if error_lines is not True:
+                    problem_file = (file_name, error_lines)
+                    problematic_row_length_file_list.append(problem_file)
+            except Exception as e:
+                self.logger_main.error(f"檢查檔案每筆長度出現錯誤 {file_name} {e}")
+                error_files_list.append(file_name)
+        
+        if len(error_files_list) > 0:
+            self.errorExit(f"檢查檔案每筆長度失敗 {error_files_list}")
+        
+        if len(problematic_row_length_file_list) > 0:
+            self.errorExit(f"出現資料長度不符合規範的檔案，請確認出錯位置 {problematic_row_length_file_list}")
+        elif len(problematic_row_length_file_list) == 0:
+            return True

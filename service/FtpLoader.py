@@ -23,12 +23,6 @@ Modify          :
 import abc
 
 class FtpLoader(abc.ABC):
-
-
-    # @abc.abstractmethod
-    # def __init__(self):
-    #     return NotImplemented
-
     '''
         FTP Loader main flow
     '''
@@ -36,58 +30,33 @@ class FtpLoader(abc.ABC):
     def run(self):
         return NotImplemented
 
-    '''
-        @ftp_config: read from the ftp config file.
-        return: ftp connection object.
-    '''
-    # @abc.abstractmethod
-    # def getFtpConnection(self):
-    #     return NotImplemented
-
-    '''
-        @ftp_path/name_pattern: read from the ftp config file.
-        @date_string: from command argument
-        return: ftp_file_list
-    '''
     @abc.abstractmethod
     def getFtpFileList(self):
         return NotImplemented
 
-    '''
-        @work_path: read from config file
-    '''
     @abc.abstractmethod
-    def downloadFtpFile(self, name, size):
+    def downloadFtpFile(self, file_list):
         return NotImplemented
 
-    '''
-        zip_type: get from ftp config file
-    '''
     @abc.abstractmethod
-    def unzipFile(self, ftp_file_list, zip_type):
+    def unzipFile(self, file_list):
         return NotImplemented
 
-    '''
-        @delimiter/fix_size_file: get from hive config file.
-    '''
     @abc.abstractmethod
-    def reformatFile(self, ftp_file_list, delimiter, fix_size_file):
+    def removeHeaderLine(self, file_list):
         return NotImplemented
 
-    # '''
-    #     @db_name/@table_name: get from htp config file
-    # '''
-    # @abc.abstractmethod
-    # def writeToHive(self, ftp_file_list, db_connection, db_name, table_name):
-    #     return NotImplemented
-
-    '''
-        @object_store_path/@access_id/@access_key: get form ftp config file
-    '''
     @abc.abstractmethod
-    def writeToS3(self, ftp_file_list, object_store_path, access_id, access_key):
+    def insertDelimiter(self, file_list):
         return NotImplemented
 
+    @abc.abstractmethod
+    def reformatEncoding(self, file_list):
+        return NotImplemented
+
+    @abc.abstractmethod
+    def writeToS3(self, file):
+        return NotImplemented
 
     @abc.abstractmethod
     def close(self):
