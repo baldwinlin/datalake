@@ -101,7 +101,7 @@ class UploadCheckImpl(UploadCheck):
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
         #組合log name
-        log_name = f"{self.log_prefix}_{timestamp}"
+        log_name = f"{self.log_prefix}{timestamp}"
 
         # 建立 log 完整路徑
         log_dir = log_path / "uc"

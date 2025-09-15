@@ -211,25 +211,12 @@ class FtpWritterImpl(FtpWritter):
 
     def createLog(self):
         log_path = Path(self.log_path)
-
-        # filename = None
-        # sql_file = None
-        # if(self.source_type.lower() == "db"):
-        #     # 取得 sql 檔名（不含副檔名）
-        #     sql_file = Path(self.sql_file)
-        #     filename = sql_file.stem  # create_01
-        #     self.sql_file_name = sql_file.name
-        # else:
-        #     filename = "ftpwritter_S3_"
-
-
-
         # 日期
         today = datetime.today().strftime("%Y%m%d")
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
         #組合log name
-        log_name = f"{self.log_prefix}_{timestamp}"
+        log_name = f"{self.log_prefix}{timestamp}"
 
         # 建立 log 完整路徑
         log_dir = log_path / "fw"
