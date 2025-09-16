@@ -102,6 +102,7 @@ class FtpDaoImpl(FileDao):
     def listFiles(self, source_path, name_pattern, date) -> List[str]:
         """初始化列出符合名稱模式的檔案"""
         target_name_pattern = FilenameProcessor._process_name_pattern(name_pattern, date)
+        self._log('info', f"置換後的檔案名稱模式: {target_name_pattern}")
         files: List[str] = []
         
         """使用 FTP server 列出符合名稱模式的檔案，支援 MLSD 和 NLST 列舉檔案"""

@@ -25,11 +25,20 @@ class FilenameProcessor:
         if fnmatch.fnmatch(name, target_name_pattern):
             return True
 
-        try:
-            if re.fullmatch(target_name_pattern, name):
-                return True
-        except Exception as e:
-            raise Exception(f"檢查檔案名稱是否符合指定的模式失敗，檔案名稱模式需要統一使用正規表示式或是萬用字元: {e}")
+        # try:
+        #     if re.fullmatch(target_name_pattern, name):
+        #         return True
+        # except Exception as e:
+        #     raise Exception(f"檢查檔案名稱是否符合指定的模式失敗，檔案名稱模式需要統一使用正規表示式或是萬用字元: {e}")
+
+        REGEX_HINTS = ("^", "$", r"\d", r"\w", r"\s", "(", ")", "|", "{", "}")
+        if any(h in target_name_pattern for h in REGEX_HINTS):
+            try:
+                return re.fullmatch(target_name_pattern, name) is not None
+            except re.error as e:
+                raise Exception(
+                    f"檢查檔案名稱樣式失敗：疑似正規表示式不合法（{e}）。請統一使用 glob 或合法 regex。"
+                )
         
         return False
 
