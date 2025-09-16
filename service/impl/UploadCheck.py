@@ -101,7 +101,7 @@ class UploadCheckImpl(UploadCheck):
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
         #組合log name
-        log_name = f"{self.log_prefix}_{timestamp}"
+        log_name = f"{self.log_prefix}{timestamp}"
 
         # 建立 log 完整路徑
         log_dir = log_path / "uc"
@@ -171,6 +171,56 @@ class UploadCheckImpl(UploadCheck):
             if cursor:
                 cursor.close()
 
+    def compareTableSchema(self, conn, source_table, target_table):
+        """
+        比對來源表格與目標表格的 schema（欄位名稱與型態）是否一致。
+
+        :param conn: 已經建立好的 jaydebeapi 連線物件
+        :param source_table: 來源表格名稱
+        :param target_table: 目標表格名稱
+        :return: (bool, str) - True表示schema一致，False表示不一致，並回傳說明訊息
+        """
+        cursor = None
+        try:
+            cursor = conn.cursor()
+
+            # 1. 取得來源表格的 schema
+            sql_source = f"SELECT * FROM {source_table} LIMIT 1"
+            cursor.execute(sql_source)
+            source_schema = cursor.description
+
+            # 2. 取得目標表格的 schema
+            sql_target = f"SELECT * FROM {target_table} LIMIT 1"
+            cursor.execute(sql_target)
+            target_schema = cursor.description
+
+            # 3. 比對欄位數量
+            if len(source_schema) != len(target_schema):
+                return False, f"欄位數量不一致。來源表格有 {len(source_schema)} 個欄位，目標表格有 {len(target_schema)} 個。"
+
+            # 4. 比對每個欄位的名稱和型態
+            for i in range(len(source_schema)):
+                source_col = source_schema[i]
+                target_col = target_schema[i]
+
+                # 比較欄位名稱 (第0個元素)
+                if source_col[0] != target_col[0]:
+                    return False, f"欄位名稱不一致。來源表格的第 {i + 1} 個欄位是 '{source_col[0]}', 但目標表格是 '{target_col[0]}'."
+
+                # 比較欄位型態 (第1個元素，代表資料型態的內部代碼)
+                if source_col[1] != target_col[1]:
+                    return False, f"欄位型態不一致。來源表格的 '{source_col[0]}' 欄位型態為 '{source_col[1]}', 但目標表格為 '{target_col[1]}'."
+
+            return True, "欄位名稱與型態皆一致。"
+
+        except jaydebeapi.DatabaseError as e:
+            return False, f"資料庫錯誤: {e}"
+        except Exception as e:
+            return False, f"發生錯誤: {e}"
+        finally:
+            if cursor:
+                cursor.close()
+
     def run(self):
         self.logger.setLevel(getattr(logging, self.log_level, logging.INFO))
         self.logger.info("[Run Upload Check]")
@@ -179,6 +229,15 @@ class UploadCheckImpl(UploadCheck):
             dao = self.connectDb()
         except Exception as e:
             self.errorExit(f'[資料庫連線失敗] {e}')
+
+        #Compare table schema
+        src_table = f'{self.src_db}.{self.src_table}'
+        tg_table = f'{self.tg_db}.{self.tg_table}'
+        match, msg = self.compareTableSchema(dao.conn, src_table, tg_table)
+        if not match:
+            self.errorExit(f"[Table schema比對失敗] {msg}")
+        else:
+            self.logger.info("[Table schema比對完成]")
 
         #Read source control table
         check_cnt = 0

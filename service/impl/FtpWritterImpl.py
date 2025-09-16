@@ -143,11 +143,11 @@ class FtpWritterImpl(FtpWritter):
         self.tg_new_line_character = "\n" if pc_config.get('TARGET', 'NEW_LINE_CHARACTER', fallback=None) == "\\n" else "\r\n"
         self.tg_encoding = pc_config.get('TARGET', 'ENCODING', fallback=None)
         self.tg_col_size_file = pc_config.get('TARGET', 'COL_SIZE_FILE', fallback=None)
-        self.tg_header = pc_config.get('TARGET', 'HEADER', fallback=None)
+        self.tg_header = pc_config.get('TARGET', 'HEADER', fallback='N')
         self.tg_bucket = pc_config.get('TARGET', 'BUCKET', fallback=None)
-        self.tg_ctl_file = pc_config.get('TARGET', 'CTL_FILE', fallback=None)
+        self.tg_ctl_file = pc_config.get('TARGET', 'CTL_FILE', fallback='N')
         self.tg_ctl_file_name_pattern = pc_config.get('TARGET', 'CTL_FILE_NAME_PATTERN', fallback=None)
-        self.tg_ctl_file_delimiter = pc_config.get('TARGET', 'CTL_FILE_DELIMITER', fallback=None)
+        self.tg_ctl_chinese= pc_config.get('TARGET', 'CHINESE-SW', fallback='Y')
 
         # Get config [ZIP] section
         self.zip_type = pc_config.get('ZIP', 'ZIP_TYPE', fallback=None)
@@ -166,6 +166,23 @@ class FtpWritterImpl(FtpWritter):
         except Exception as e:
             raise Exception(f"[讀取LOG path錯誤] {e}")
         self.logger = self.createLog()
+
+    def getKeyValue(self, data_dict: dict, target_key: str):
+        """
+        以不區分大小寫的方式，從字典中尋找包含目標鍵子字串的鍵。
+
+        Args:
+            data_dict (dict): 來源字典。
+            target_key (str): 目標鍵（子字串）。
+
+        Returns:
+            The value associated with the key, or None if no matching key is found.
+        """
+        target_key_lower = target_key.lower()
+        for key, value in data_dict.items():
+            if target_key_lower in key.lower():
+                return value
+        return None
 
     def getCorrectDelimiter(selr, delimiter_str):
         """
@@ -194,25 +211,12 @@ class FtpWritterImpl(FtpWritter):
 
     def createLog(self):
         log_path = Path(self.log_path)
-
-        # filename = None
-        # sql_file = None
-        # if(self.source_type.lower() == "db"):
-        #     # 取得 sql 檔名（不含副檔名）
-        #     sql_file = Path(self.sql_file)
-        #     filename = sql_file.stem  # create_01
-        #     self.sql_file_name = sql_file.name
-        # else:
-        #     filename = "ftpwritter_S3_"
-
-
-
         # 日期
         today = datetime.today().strftime("%Y%m%d")
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
         #組合log name
-        log_name = f"{self.log_prefix}_{timestamp}"
+        log_name = f"{self.log_prefix}{timestamp}"
 
         # 建立 log 完整路徑
         log_dir = log_path / "fw"
@@ -409,7 +413,7 @@ class FtpWritterImpl(FtpWritter):
 
 
     def replaceArg(self, src_string):
-        if (self.args_str is not None):
+        if (self.args_str is not None and src_string is not None):
             for key, value in self.args_dict.items():
                 src_string = src_string.replace(key, value)
         return src_string
@@ -423,7 +427,7 @@ class FtpWritterImpl(FtpWritter):
         sql_str = self.readSqlFile()
         self.logger.debug(f'[執行SQL]\n{sql_str}')
         out_file = self.temp_path / self.replaceArg(self.tg_name_pattern)
-        out_file_ctl = self.temp_path / self.replaceArg(self.tg_ctl_file_name_pattern)
+
         process_cnt = 0
         if (self.tg_delimiter):  # Export file with delimiter
             process_cnt = self.exportFile(dao.conn, sql_str, out_file, self.tg_delimiter,
@@ -439,9 +443,13 @@ class FtpWritterImpl(FtpWritter):
         ctl_file = None
         if(self.tg_ctl_file.lower() == 'y'):
             ctl_file = self.temp_path / self.replaceArg(self.tg_ctl_file_name_pattern)
+            batch_date = self.getKeyValue(self.args_dict, "batch_date")
+            if not batch_date:
+                batch_date = datetime.today().strftime("%Y%m%d")
             with open(ctl_file, "w", encoding=self.tg_encoding, errors="replace") as f:
-                today = datetime.today().strftime("%Y%m%d")
-                ctl_text = f'{today}{self.tg_ctl_file_delimiter}{process_cnt:06d}'
+                ctl_text = '***{}{}{:09d}{:09d}{}{}'.format(self.replaceArg(self.tg_name_pattern),
+                                                            batch_date, process_cnt, process_cnt,
+                                                            self.tg_ctl_chinese, batch_date)
                 f.write(ctl_text)
         return out_file, ctl_file
 
@@ -526,6 +534,36 @@ class FtpWritterImpl(FtpWritter):
             except Exception as e:
                 self.errorExit(f'[上傳檔案至S3失敗] {e}')
 
+    def deleteFiles(self, file_list: list):
+        """
+        刪除傳入列表中的所有檔案。
+
+        Args:
+            file_list (list): 包含要刪除的檔案路徑的列表。
+        """
+        deleted_count = 0
+
+        for file_path in file_list:
+            try:
+                # 檢查檔案是否存在
+                if os.path.exists(file_path):
+                    # 刪除檔案
+                    os.remove(file_path)
+                    self.logger.debug(f"成功刪除檔案: {file_path}")
+                    deleted_count += 1
+                else:
+                    self.logger.debug(f"警告: 檔案不存在，無法刪除: {file_path}")
+            except OSError as e:
+                # 處理刪除檔案時可能發生的錯誤，例如權限問題
+                self.logger.debug(f"錯誤: 無法刪除檔案 {file_path} - {e}")
+
+        self.logger.debug(f"\刪除完成，共成功刪除 {deleted_count} 個檔案。")
+
+    def errorExit(self, error_message, error_traceback = ''):
+        self.logger.debug(error_traceback)
+        self.logger.error(error_message)
+        #self.errorHandler.exceptionWriter(error_message)
+        exit(1)
 
     def run(self):
         self.logger.setLevel(getattr(logging, self.log_level, logging.INFO))
@@ -555,14 +593,13 @@ class FtpWritterImpl(FtpWritter):
             except Exception as e:
                 self.errorExit(f'[壓縮檔案失敗] {e}')
             self.uploadFile(out_zip_file)
+            filelist.append(out_zip_file)
         else:
             for upload_file in filelist:
                 self.uploadFile(upload_file)
 
-    def errorExit(self, error_message):
-        self.logger.error(error_message)
-        #self.errorHandler.exceptionWriter(error_message)
-        exit(1)
+        #Delete process files
+        self.deleteFiles(filelist)
 
 
 
