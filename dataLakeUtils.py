@@ -31,7 +31,7 @@ from service.impl.DbtExecutionImpl import *
 from service.impl.AirbyteExecutionImpl import *
 from service.impl.AirbyteCancelForced import *
 from service.impl.UploadCheck import *
-
+from service.impl.HouseKeepingImpl import *
 from util.CleanTempFIle import *
 
 
@@ -154,7 +154,18 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
         if (uc.run()):
             logger_main.info("Run Upload Check success")
             exit(0)
-
+    
+    elif (fun == 'HK'):
+        logger_main.info("Run Housekeeping")
+        try:
+            hk = HouseKeepingImpl(main_config, fc_config, pc_config, fc_args)
+        except Exception as e:
+            logger_main.error(f"HouseKeepingImpl {e}")
+            errorHandler.exceptionWriter(f"HouseKeepingImpl {e}")
+            exit(1)
+        if (hk.run()):
+            logger_main.info("Run Housekeeping success")
+            exit(0)
     else:
         print("No such function")
         exit(1)

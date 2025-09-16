@@ -98,6 +98,7 @@ class JdbcDaoImpl(DatabaseDao):
             return affected
         except Exception as e:
             raise Exception(f"執行更新失敗: {e}")
+    
 
     def close(self):
         """關閉資料庫連線"""
