@@ -27,7 +27,7 @@ import base64, hashlib
 import re
 import fnmatch 
 
-
+#一次性刪除多個 S3 檔案時，需要手動注入 Content-MD5 的 header，因為 boto3 不支援自動生成，然後 S3 會檢查 Content-MD5 的 header 是否與檔案的 XML 是否一致
 def _inject_content_md5(request, **kwargs):
     if not request.body or 'Content-MD5' in request.headers:
         return
