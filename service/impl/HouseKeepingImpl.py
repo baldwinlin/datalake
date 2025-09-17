@@ -74,10 +74,6 @@ class HouseKeepingImpl(Housekeeping):
             self.hive_salt = readSaltFile(self.hive_key_file)
             self.hive_sec = get_gpg_decrypt(self.hive_sec_str, self.hive_salt)
             
-            if self.hive_driver.lower() == 'postgresql':
-                self.hive_user = "datalake"
-                self.hive_sec = "123456"
-            
         except Exception as e:
             raise Exception(f"[讀取Hive config錯誤] {e}")
 
@@ -138,38 +134,37 @@ class HouseKeepingImpl(Housekeeping):
                 self.CleanupHive()
             except Exception as e:
                 self.errorExit(f"清理Hive檔案失敗: {e}")
-        else:
-            raise Exception(f"CLEANUP type {self.cleanup_type} 未定義或不支援")
 
         self.logger_main.info("Housekeeping 執行完成")
         return True
 
     def CleanupS3(self):
         file_list = self.GetS3FileList()
-        self.logger_main.info(f"指定的路徑 {self.s3_path} 下的S3檔案列表: {file_list}")
-        need_keep, need_clean = self.OrganizeS3FileList(file_list)
-        self.logger_main.info(f"需要保留的檔案列表: {need_keep}")
-        self.logger_main.info(f"需要清理的檔案列表: {need_clean}")
-        if len(need_clean) > 0:
-            result = self.s3Dao.deleteFiles(need_clean)
-            if result:
-                self.logger_main.info(f"清理S3檔案完成")
-                self.logger_main.info(f"清理 S3 檔案後進行的檢查")
-                self.logger_main.info(f"等待 20 秒後進行檢查")
-                time.sleep(20)
-                self.CheckS3FileList(need_clean)
-            else:
-                self.errorExit(f"清理 S3 檔案失敗")
+        if not file_list:
+            self.errorExit(f"S3 查找無符合檔案名稱模式的檔案")
         else:
-            self.logger_main.info(f"S3 無需要清理的檔案")
-            return True
+            self.logger_main.info(f"指定的路徑 {self.s3_path} 下的S3檔案列表: {file_list}")
+            need_keep, need_clean = self.OrganizeS3FileList(file_list)
+            self.logger_main.info(f"需要保留的檔案列表: {need_keep}")
+            self.logger_main.info(f"需要清理的檔案列表: {need_clean}")
+            if len(need_clean) > 0:
+                result = self.s3Dao.deleteFiles(need_clean)
+                if result:
+                    self.logger_main.info(f"清理S3檔案完成")
+                    self.logger_main.info(f"清理 S3 檔案後進行的檢查")
+                    self.logger_main.info(f"等待 20 秒後進行檢查")
+                    time.sleep(20)
+                    self.CheckS3FileList(need_clean)
+                else:
+                    self.errorExit(f"清理 S3 檔案失敗")
+            else:
+                self.logger_main.info(f"S3 無需要清理的檔案")
       
     def GetS3FileList(self):
         try:
             target_path = str(self.s3_path + "/" + self.file_pattern)
             self.logger_main.info(f"欲查詢的檔案路徑與名稱模式: {target_path}")
             file_list = self.s3Dao.listFiles(target_path)
-
         except Exception as e:
             raise Exception(f"取得S3檔案列表失敗: {e}")
         return file_list
@@ -208,9 +203,10 @@ class HouseKeepingImpl(Housekeeping):
     def CleanupHive(self):
         self.logger_main.info(f"清理Hive分區")
         hive_dao = self.ConnectHiveDb()
-
         all_partitions = self.ShowHiveAllPartitions(hive_dao)
-        if all_partitions:
+        if not all_partitions:
+            self.errorExit(f"指定的 Hive 資料庫 {self.hive_name} Table {self.hive_table} 無任何分區資料")
+        else:
             self.logger_main.info(f"Hive所有分區: {all_partitions}")
             need_keep, need_clean = self.OrganizePartitionsToDates(all_partitions)
             self.logger_main.info(f"需要保留的分區: {need_keep}")
@@ -229,9 +225,6 @@ class HouseKeepingImpl(Housekeeping):
             else:
                 self.logger_main.info(f"Hive 無需要清理的分區")
                 return True
-        else:
-            self.logger_main.info(f"Hive 無分區")
-            return True
  
     def ConnectHiveDb(self):
         if (self.hive_driver.lower() == 'hive2'):
@@ -254,11 +247,10 @@ class HouseKeepingImpl(Housekeeping):
             batch_size = 2
             for i in range(0, len(need_clean), batch_size):
                 dates_chunk = need_clean[i:i+batch_size]
-                # 組成 PARTITION 規格清單
                 specs = [f"PARTITION ({date_column}='{d}')" for d in dates_chunk]
                 sql = f"ALTER TABLE {self.hive_name}.{self.hive_table} DROP IF EXISTS " + ", ".join(specs) + " PURGE"
                 self.logger_main.info(f"[Hive]預計執行的 SQL: {sql}")
-                hive_dao.executeSql(sql)  # 用 executeUpdate，比 executeSql 穩定
+                hive_dao.executeSql(sql)
             return True
     
     def ShowHiveAllPartitions(self, hive_dao):
