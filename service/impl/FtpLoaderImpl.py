@@ -31,7 +31,7 @@ import os
 import shutil
 import time
 import json
-
+import fnmatch
 
 class FtpLoaderImpl(FtpLoader):
     def __init__(self,main_config, fc_config, pc_config, args):
@@ -55,7 +55,7 @@ class FtpLoaderImpl(FtpLoader):
             #正式環境 正式執行需解開註解
             temp_path = self.main_config.get('LOG','TEMP_PATH')
             #測試需解開註解
-            #temp_path = self.main_config.get('LOG','TEMP_BASE_PATH')
+            # temp_path = self.main_config.get('LOG','TEMP_BASE_PATH')
             self.temp_operation_folder_name= self.pc_config['SOURCE']["WORK_SUB_DIR"]
             self.temp_operation_folder_path = os.path.join(temp_path, self.temp_operation_folder_name)
         except Exception as e:
@@ -267,15 +267,24 @@ class FtpLoaderImpl(FtpLoader):
             elif self.header == "N":
                 self.logger_main.debug(f"無標題欄位行數。檢查檔案行數完成，檔案行數正確")
         
-        self.logger_main.debug(f"開始過濾掉控制檔.....")
-
         """過濾掉控制檔"""
         if self.controller_file == "Y":
+            self.logger_main.debug(f"開始過濾掉控制檔.....")
             self.logger_main.debug(f"過濾掉控制檔...")
+        
         processing_files_list = self._fileFilter(download_files_list)
         self.logger_main.info(f"需轉換的檔案列表: {processing_files_list}")
+        
         if self.controller_file == "Y":
             self.logger_main.debug(f"完成過濾掉控制檔")
+        else: 
+            for file_name in download_files_list:
+                if fnmatch.fnmatch(file_name, '*_C.txt') or fnmatch.fnmatch(file_name, '*_D.txt'): 
+                    self.logger_main.info(f"防呆機制：未設定控制檔名稱模式與設定CTL_FILE=N，但卻找到控制檔，預設控制檔名稱模式為 *_C.txt 或 *_D.txt")
+                    self.logger_main.info(f"防呆機制：找到潛在的控制檔 {file_name}")
+                    processing_files_list.remove(file_name)
+                    self.logger_main.info(f"防呆機制：完成過濾掉控制檔{file_name}，新的檔案列表: {processing_files_list}")
+                    
 
         """解碼驗證"""
         self.logger_main.debug(f"開始檢查檔案編碼.....")

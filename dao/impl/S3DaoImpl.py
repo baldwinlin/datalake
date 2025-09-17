@@ -13,13 +13,30 @@ Output          :
 Modify          :
 '''
 
-import boto3
-import fnmatch
+
 from dao.FileDao import FileDao
-import os
-from typing import List
 from util.FilenameProcessor import FilenameProcessor
+
+
+import boto3
+from botocore.exceptions import ClientError
+from botocore.client import Config
+from typing import List
+import os
+import base64, hashlib
 import re
+import fnmatch 
+
+
+def _inject_content_md5(request, **kwargs):
+    if not request.body or 'Content-MD5' in request.headers:
+        return
+
+    data = request.body if isinstance(request.body, (bytes, bytearray)) else bytes(request.body, 'utf-8')
+    digest_b64 = base64.b64encode(hashlib.md5(data).digest()).decode('utf-8')
+    request.headers['Content-MD5'] = digest_b64
+    print(f"[MD5 injected] Content-MD5={digest_b64}, body_len={len(data)}")
+
 class S3DaoImpl(FileDao):
     def __init__(self, bucket: str, host: str, port: str, aws_access_key_id=None,
                  aws_secret_access_key=None, region_name=None):
@@ -29,12 +46,16 @@ class S3DaoImpl(FileDao):
                 endpoint_url=f"http://{host}:{port}",
                 aws_access_key_id=aws_access_key_id,
                 aws_secret_access_key=aws_secret_access_key,
-                region_name=region_name
+                region_name=region_name,
+                #config=Config(signature_version="s3v4", s3={'addressing_style': 'path'})
             )
+            es = self.s3.meta.events
+            es.register('request-created.s3.DeleteObjects', _inject_content_md5)
+
             self.bucket = bucket
         except Exception as e:
             raise Exception(f"S3 連線失敗: {e}")
-
+    
     def connect(self):
         pass
 
@@ -84,15 +105,19 @@ class S3DaoImpl(FileDao):
         except Exception as e:
             raise Exception(f"S3 刪除檔案失敗 ({remote_path}): {e}")
 
-    def deleteFiles(self, remote_path_list: List[str]) -> None:
+    def deleteFiles(self, remote_path_list: List[str]):
         result = []
         if not remote_path_list:
             raise Exception("S3 刪除檔案失敗無需要刪除的檔案")
-        CHUNK = 10
-        for i in range(0, len(remote_path_list), CHUNK):
-            chunk = remote_path_list[i:i+CHUNK]
-            result = self.s3.delete_objects(Bucket=self.bucket, Delete={'Objects': [{'Key': key} for key in chunk], "Quiet": False})
-        return result['Deleted']
+        CHUNK = 2
+        try:
+            for i in range(0, len(remote_path_list), CHUNK):
+                chunk = remote_path_list[i:i+CHUNK]
+                result = self.s3.delete_objects(Bucket=self.bucket, Delete={'Objects': [{'Key': key} for key in chunk], "Quiet": False})
+            return result['Deleted']
+        except ClientError as e:
+            # 整個請求層級失敗（例如 BadDigest / 簽名錯）
+            raise Exception(f"S3 多檔刪除請求失敗：{e}")    
 
     def close(self):
         pass
