@@ -28,6 +28,7 @@ from logger import Logger
 from datetime import datetime, timedelta
 import logging
 import re
+import time
 
 class HouseKeepingImpl(Housekeeping):
     def __init__(self, main_config, fc_config, pc_config, args):
@@ -76,8 +77,6 @@ class HouseKeepingImpl(Housekeeping):
             if self.hive_driver.lower() == 'postgresql':
                 self.hive_user = "datalake"
                 self.hive_sec = "123456"
-            print(f"hive_sec: {self.hive_sec}")
-            print(f"hive_user: {self.hive_user}")
             
         except Exception as e:
             raise Exception(f"[讀取Hive config錯誤] {e}")
@@ -99,15 +98,18 @@ class HouseKeepingImpl(Housekeeping):
                 self.hive_date_column = self.pc_config.get('CLEANUP','DATE_COLUMN')
                 if self.hive_date_column is None:
                     raise Exception(f"DATE_COLUMN 不得為空值")
+                self.hive_date_format = self.pc_config.get('CLEANUP','DATE_FORMAT')
+                if self.hive_date_format is None:
+                    raise Exception(f"DATE_FORMAT 不得為空值")
+                elif self.hive_date_format not in ["%Y%m%d", "%Y-%m-%d"]:
+                    raise Exception(f"DATE_FORMAT 只接受 %Y%m%d 或 %Y-%m-%d 設定值")
             else:
                 raise Exception(f"CLEANUP type {self.cleanup_type} 未定義或不支援")
 
             self.retention_days = self.pc_config.get('CLEANUP','RETENTION_DAYS')
-
         except Exception as e:
             raise Exception(f"讀取CLEANUP config錯誤: {e}")
         
-
     def _initialize_logger(self):
         log_config = self.main_config
         housekeeping_log_path = f"{log_config['LOG']['LOG_PATH']}/housekeeping"
@@ -120,7 +122,6 @@ class HouseKeepingImpl(Housekeeping):
     def errorExit(self, error_message):
         self.logger_main.error(error_message)
         exit(1)  
-
 
     def run(self):
         self._initialize_logger()
@@ -145,22 +146,28 @@ class HouseKeepingImpl(Housekeeping):
 
     def CleanupS3(self):
         file_list = self.GetS3FileList()
-        self.logger_main.info(f"S3檔案列表: {file_list}")
+        self.logger_main.info(f"指定的路徑 {self.s3_path} 下的S3檔案列表: {file_list}")
         need_keep, need_clean = self.OrganizeS3FileList(file_list)
         self.logger_main.info(f"需要保留的檔案列表: {need_keep}")
         self.logger_main.info(f"需要清理的檔案列表: {need_clean}")
         if len(need_clean) > 0:
-            self.s3Dao.deleteFiles(need_clean)
+            result = self.s3Dao.deleteFiles(need_clean)
+            if result:
+                self.logger_main.info(f"清理S3檔案完成")
+                self.logger_main.info(f"清理 S3 檔案後進行的檢查")
+                self.logger_main.info(f"等待 20 秒後進行檢查")
+                time.sleep(20)
+                self.CheckS3FileList(need_clean)
+            else:
+                self.errorExit(f"清理 S3 檔案失敗")
         else:
             self.logger_main.info(f"S3 無需要清理的檔案")
             return True
-        self.logger_main.info(f"清理S3檔案完成")
       
     def GetS3FileList(self):
         try:
-            target_name_pattern = FilenameProcessor._process_name_pattern(self.file_pattern, self.batch_date)
-            target_path = str(self.s3_path + "/" + target_name_pattern)
-            self.logger_main.info(f"置換後的檔案名稱模式: {target_path}")
+            target_path = str(self.s3_path + "/" + self.file_pattern)
+            self.logger_main.info(f"欲查詢的檔案路徑與名稱模式: {target_path}")
             file_list = self.s3Dao.listFiles(target_path)
 
         except Exception as e:
@@ -201,40 +208,36 @@ class HouseKeepingImpl(Housekeeping):
     def CleanupHive(self):
         self.logger_main.info(f"清理Hive分區")
         hive_dao = self.ConnectHiveDb()
-        self.DeletePartitions(hive_dao)
-        self.logger_main.info(f"清理Hive分區完成")
-        # all_partitions = self.ShowHiveAllPartitions(hive_dao)
-        # self.logger_main.info(f"Hive所有分區: {all_partitions}")
 
-        # need_keep, need_clean = self.OrganizePartitionsToDates(all_partitions)
-        # self.logger_main.info(f"需要保留的分區: {need_keep}")
-        # self.logger_main.info(f"需要清理的分區: {need_clean}")
-        
-        # if len(need_clean) > 0:
-        #     self.DeletePartitions(need_clean, hive_dao)
-        # else:
-        #     self.logger_main.info(f"Hive 無需要清理的分區")
-        #     return True
-        # self.logger_main.info(f"清理Hive分區完成")
+        all_partitions = self.ShowHiveAllPartitions(hive_dao)
+        if all_partitions:
+            self.logger_main.info(f"Hive所有分區: {all_partitions}")
+            need_keep, need_clean = self.OrganizePartitionsToDates(all_partitions)
+            self.logger_main.info(f"需要保留的分區: {need_keep}")
+            self.logger_main.info(f"需要清理的分區: {need_clean}")
 
-        # if self.hive_driver.lower() == 'postgresql':
-        #     all_partitions = self.ShowHiveAllPartitions(hive_dao)
-        #     self.logger_main.info(f"清理完後的Hive所有分區: {all_partitions}")
-
-    
+            if len(need_clean) > 0:
+                result = self.DeletePartitions(need_clean, hive_dao)
+                if result:
+                    self.logger_main.info(f"清理Hive分區完成")
+                    self.logger_main.info(f"等待 20 秒後進行檢查")
+                    time.sleep(20)
+                    self.CheckHivePartitions(need_clean, hive_dao)
+                else:
+                    keep_partitions = self.ShowHiveAllPartitions(hive_dao)
+                    self.errorExit(f"清理失敗，Hive現在的分區: {keep_partitions}")
+            else:
+                self.logger_main.info(f"Hive 無需要清理的分區")
+                return True
+        else:
+            self.logger_main.info(f"Hive 無分區")
+            return True
+ 
     def ConnectHiveDb(self):
         if (self.hive_driver.lower() == 'hive2'):
             driver_class = "org.apache.kyuubi.jdbc.KyuubiHiveDriver"
             jdbc_url = f"jdbc:hive2://{self.hive_host}:{self.hive_port}/{self.hive_name};auth=LDAP"
             driver_jar = f"{self.driver_path}/kyuubi-hive-jdbc-shaded-1.10.2.jar"
-        elif (self.hive_driver.lower() == 'mysql'):
-            driver_class = "com.mysql.cj.jdbc.Driver"
-            jdbc_url = f"jdbc:mysql://{self.hive_host}:{self.hive_port}/{self.hive_name}"
-            driver_jar = f"{self.driver_path}\\mysql-connector-j-9.4.0.jar"
-        elif (self.hive_driver.lower() == 'postgresql'):
-            driver_class = "org.postgresql.Driver"
-            jdbc_url = f"jdbc:postgresql://{self.hive_host}:{self.hive_port}/{self.hive_name}"
-            driver_jar = f"{self.driver_path}/postgresql-42.7.7.jar"
 
         hive_dao = JdbcDaoImpl(driver_class, jdbc_url, self.hive_user, self.hive_sec, driver_jar)
 
@@ -245,72 +248,68 @@ class HouseKeepingImpl(Housekeeping):
         except Exception as e:
             self.errorExit(f'[資料庫連線失敗] {e}')
 
-    def DeletePartitions(self, hive_dao):
+    def DeletePartitions(self, need_clean, hive_dao):
         if self.hive_driver.lower() == 'hive2':
             date_column = self.hive_date_column
-            base_date = datetime.strptime(self.batch_date, "%Y%m%d").date()
-            cutoff_date = base_date - timedelta(days=int(self.retention_days))
-            cutoff_str = cutoff_date.strftime("%Y%m%d")
-            partition = [f"PARTITION ({date_column} <= '{cutoff_str}') PURGE;"]
-            sql =  f"ALTER TABLE {self.hive_name}.{self.hive_table} DROP IF EXISTS " + ", ".join(partition)
-            
-            self.logger_main.info(f"[Hive] 預計執行的 SQL: {sql}")
-            # hive_dao.executeSql(sql)
-  
-        # elif self.hive_driver.lower() == 'postgresql':
-        #     for date in need_clean:
-        #         self.logger_main.info(f"清理Hive分區: {self.hive_table}_{date}")
-        #         sql = f"DROP TABLE IF EXISTS {self.hive_table}_{date}"
-        #         hive_dao.executeSql(sql)
+            batch_size = 2
+            for i in range(0, len(need_clean), batch_size):
+                dates_chunk = need_clean[i:i+batch_size]
+                # 組成 PARTITION 規格清單
+                specs = [f"PARTITION ({date_column}='{d}')" for d in dates_chunk]
+                sql = f"ALTER TABLE {self.hive_name}.{self.hive_table} DROP IF EXISTS " + ", ".join(specs) + " PURGE"
+                self.logger_main.info(f"[Hive]預計執行的 SQL: {sql}")
+                hive_dao.executeSql(sql)  # 用 executeUpdate，比 executeSql 穩定
+            return True
     
-
     def ShowHiveAllPartitions(self, hive_dao):
-        if self.hive_driver.lower() == 'postgresql':
-            sql = f"""
-                SELECT
-                c.relname                              AS child,               -- 子分區表名 (e.g. test_20250915)
-                pg_get_expr(c.relpartbound, c.oid)     AS bound                -- 分區邊界 (e.g. FOR VALUES FROM (...) TO (...))
-                FROM pg_class c
-                JOIN pg_inherits i   ON i.inhrelid = c.oid
-                JOIN pg_class p      ON p.oid      = i.inhparent
-                JOIN pg_namespace n  ON n.oid      = p.relnamespace
-                WHERE p.relname = '{self.hive_table}'
-                AND n.nspname = ANY(current_schemas(true))   -- 走當前 search_path（你已把 datalake 的 search_path 設 public）
-                ORDER BY child;
-                """
-            rows = hive_dao.executeQuery(sql)
-            return rows
-    
+        if self.hive_driver.lower() == 'hive2':
+            sql = f"SHOW PARTITIONS {self.hive_name}.{self.hive_table}"
+            all_partitions = hive_dao.executeQuery(sql)
+            return all_partitions
+
     def OrganizePartitionsToDates(self, rows):
-        base_date = datetime.strptime(self.batch_date, "%Y%m%d").date()
+        base_date = datetime.strptime(self.batch_date, self.hive_date_format).date()
         keeping_dates_list = []
         for i in range(int(self.retention_days)):
-            keeping_dates_list.append((base_date - timedelta(days=i)).strftime("%Y%m%d"))
+            keeping_dates_list.append((base_date - timedelta(days=i)).strftime(self.hive_date_format))
         self.logger_main.info(f"需要保留的日期列表: {keeping_dates_list}")
         keeping_set = set(keeping_dates_list)
         need_keep, need_clean = [], []
+        
         for row in rows:
-            date = self._pg_partitions_to_dates(row)
-            if date in keeping_set:
-                need_keep.append(date)
-            elif date > self.batch_date:
+            part_str = row[0]
+            try:
+                date = part_str.split("=")[1]
+            except Exception as e:
+                self.errorExit(f"解析分區日期失敗: {e}")
+            if date in keeping_set or date > self.batch_date:
                 need_keep.append(date)
             else:
                 need_clean.append(date)
         return need_keep, need_clean
 
-    def _pg_partitions_to_dates(self, row):
-        """
-        rows 例：[
-        ('test_20250915', "FOR VALUES FROM ('2025-09-15') TO ('2025-09-16')"),
-        ...
-        ]
-        回傳：['20250915', '20250916', '20250917']
-        """
-        BOUND_RE = re.compile(r"FROM\s*\('(\d{4}-\d{2}-\d{2})'\)\s*TO\s*\('(\d{4}-\d{2}-\d{2})'\)", re.IGNORECASE)
-        
-        m = BOUND_RE.search(row[1])
-        if not m:
-            return None
-        start = datetime.strptime(m.group(1), "%Y-%m-%d").strftime("%Y%m%d")
-        return start
+    def CheckS3FileList(self, need_clean):
+        keeping_file_list = self.GetS3FileList()
+        if keeping_file_list:
+            self.logger_main.info(f"清理 S3 檔案後的檔案列表: {keeping_file_list}")
+            overlap = set(keeping_file_list) & set(need_clean)
+            if overlap:
+                self.errorExit(f"清理失敗，仍然存在檔案: {overlap}")
+            else:
+                self.logger_main.info(f"清理完後的S3檔案與需要清理的檔案無重疊")
+        else:
+            self.logger_main.info(f"清理完後的S3檔案為空")
+        self.logger_main.info(f"檢查 S3 檔案完成")
+
+    def CheckHivePartitions(self, need_clean, hive_dao):
+        keep_partitions = self.ShowHiveAllPartitions(hive_dao)
+        if keep_partitions:
+            self.logger_main.info(f"清理完後的Hive所有分區: {keep_partitions}")
+            overlap = set(keep_partitions) & set(need_clean)
+            if overlap:
+                self.errorExit(f"清理失敗，仍然存在分區: {overlap}")
+            else:
+                self.logger_main.info(f"清理完後的Hive所有分區與需要清理的分區無重疊")
+        else:
+            self.logger_main.info(f"清理完後的Hive所有分區為空")
+        self.logger_main.info(f"檢查 Hive 分區完成")
