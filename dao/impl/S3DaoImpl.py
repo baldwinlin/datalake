@@ -36,7 +36,7 @@ def _inject_content_md5(request, **kwargs):
     data = request.body if isinstance(request.body, (bytes, bytearray)) else bytes(request.body, 'utf-8')
     digest_b64 = base64.b64encode(hashlib.md5(data).digest()).decode('utf-8')
     request.headers['Content-MD5'] = digest_b64
-    print(f"[MD5 injected] Content-MD5={digest_b64}, body_len={len(data)}")
+    # print(f"[MD5 injected] Content-MD5={digest_b64}, body_len={len(data)}")
 
 class S3DaoImpl(FileDao):
     def __init__(self, bucket: str, host: str, port: str, aws_access_key_id=None,
