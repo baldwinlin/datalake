@@ -27,7 +27,6 @@ import json
 from logger import Logger
 from datetime import datetime, timedelta
 import logging
-import re
 import time
 from zoneinfo import ZoneInfo
 
@@ -141,6 +140,8 @@ class HouseKeepingImpl(Housekeeping):
         return True
 
     def CleanupS3(self):
+        self.logger_main.info(f"清理S3檔案")
+        self.logger_main.info(f"目前所在位置: {self.bucket}/{self.s3_path}")
         file_list, file_date_list = self.GetS3FileList()
         if not file_list:
             self.logger_main.info(f"S3 查找無符合檔案名稱模式的檔案")
@@ -222,6 +223,7 @@ class HouseKeepingImpl(Housekeeping):
 
     def CleanupHive(self):
         self.logger_main.info(f"清理Hive分區")
+        self.logger_main.info(f"目前所在的資料庫: {self.hive_name}, 資料表: {self.hive_table}")
         hive_dao = self.ConnectHiveDb()
         all_partitions = self.ShowHiveAllPartitions(hive_dao)
         if not all_partitions:
@@ -273,6 +275,7 @@ class HouseKeepingImpl(Housekeeping):
         str_keeping_dates_list = []
         for i in range(int(self.retention_days)):
             keeping_dates_list.append((base_date - timedelta(days=i)))
+            str_keeping_dates_list.append((base_date - timedelta(days=i)).strftime(self.hive_date_format))
         self.logger_main.info(f"需要保留的日期列表: {str_keeping_dates_list}")
         keeping_set = set(keeping_dates_list)
         need_keep, need_clean = [], []
@@ -290,23 +293,28 @@ class HouseKeepingImpl(Housekeeping):
             except ValueError:
                     self.errorExit(f"分區日期格式與指定格式 {self.hive_date_format} 不符")
             
-            if parsed_date in keeping_set or parsed_date > self.batch_date:
+            if parsed_date in keeping_set:
+                self.logger_main.debug(f"需要保留的分區，日期在保留天數內: {partition}")
+                need_keep.append(partition)
+            elif parsed_date > base_date:
+                self.logger_main.debug(f"需要保留的分區，日期在未來: {partition}")
                 need_keep.append(partition)
             else:
+                self.logger_main.debug(f"需要清理的分區，日期在過去: {partition}")
                 need_clean.append(partition)
         return need_keep, need_clean
 
     def DeletePartitions(self, need_clean_partitions, hive_dao):
         if self.hive_driver.lower() == 'hive2':
-            date_column = self.hive_date_column
             batch_size = 2
+            batch_count = 0
             for i in range(0, len(need_clean_partitions), batch_size):
                 partitions_chunk = need_clean_partitions[i:i+batch_size]
-                self.logger_main.info(f"批次：{i}，需要清理的分區: {partitions_chunk}")
+                self.logger_main.info(f"[Hive]批次：{batch_count}，需要清理的分區列表: {partitions_chunk}")
                 
                 partition_specs = []
                 for partition_str in partitions_chunk:
-                    parsed_partition_dict = dict(seg.split("=", 1) for seg in partition_str.split("/"))
+                    parsed_partition_dict = dict(seg.split("=", 1) for seg in partition_str[0].split("/"))
 
                     if self.hive_date_column not in parsed_partition_dict:
                         self.errorExit(f"分區欄位缺乏 {self.hive_date_column} 欄位")
@@ -315,8 +323,9 @@ class HouseKeepingImpl(Housekeeping):
                     partition_specs.append(f"PARTITION ({inside_partition})")
 
                 sql = f"ALTER TABLE {self.hive_name}.{self.hive_table} DROP IF EXISTS " + ", ".join(partition_specs) + " PURGE"
-                self.logger_main.info(f"[Hive]批次：{i}，預計執行的 SQL: {sql}")
+                self.logger_main.info(f"[Hive]批次：{batch_count}，預計執行的 SQL: {sql}")
                 hive_dao.executeSql(sql)
+                batch_count += 1
             return True
     
     def CheckHivePartitions(self, hive_dao):
@@ -340,6 +349,7 @@ class HouseKeepingImpl(Housekeeping):
                         self.errorExit(f"分區日期格式與指定格式 {self.hive_date_format} 不符")
                 if parsed_date <= out_of_date:
                     not_clear_partitions.append(partition)
+                    self.logger_main.debug(f"檢查出不需要保留的分區: {partition}")
             
             if not_clear_partitions:
                 self.errorExit(f"清理失敗，仍然存在分區: {not_clear_partitions}")
