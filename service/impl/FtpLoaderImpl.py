@@ -277,13 +277,6 @@ class FtpLoaderImpl(FtpLoader):
         
         if self.controller_file == "Y":
             self.logger_main.debug(f"完成過濾掉控制檔")
-        else: 
-            for file_name in download_files_list:
-                if fnmatch.fnmatch(file_name, '*_C.txt') or fnmatch.fnmatch(file_name, '*_D.txt'): 
-                    self.logger_main.info(f"防呆機制：未設定控制檔名稱模式與設定CTL_FILE=N，但卻找到控制檔，預設控制檔名稱模式為 *_C.txt 或 *_D.txt")
-                    self.logger_main.info(f"防呆機制：找到潛在的控制檔 {file_name}")
-                    processing_files_list.remove(file_name)
-                    self.logger_main.info(f"防呆機制：完成過濾掉控制檔{file_name}，新的檔案列表: {processing_files_list}")
                     
 
         """解碼驗證"""
@@ -475,7 +468,6 @@ class FtpLoaderImpl(FtpLoader):
     def writeToS3(self, file):
         file_path = os.path.join(self.temp_upload_path, file)
         s3_file_path = os.path.join(self.target_path, file)
-
         try:
             s3Dao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
             s3Dao.uploadFile(file_path, s3_file_path)

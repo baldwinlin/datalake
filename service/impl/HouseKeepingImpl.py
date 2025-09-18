@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 import logging
 import re
 import time
+from zoneinfo import ZoneInfo
 
 class HouseKeepingImpl(Housekeeping):
     def __init__(self, main_config, fc_config, pc_config, args):
@@ -59,7 +60,7 @@ class HouseKeepingImpl(Housekeeping):
             raise Exception(f"讀取S3 config錯誤: {e}")
         
         try:
-            self.driver_path = self.main_config.get('DB_DRIVER','PG_DRIVER_PATH')
+            self.driver_path = self.main_config.get('DB_DRIVER','DRIVER_PATH')
         except Exception as e:
             raise Exception(f"[讀取DB dreiver path錯誤] {e}")
         
@@ -80,6 +81,7 @@ class HouseKeepingImpl(Housekeeping):
         #cleanup config
         try:
             self.cleanup_type = self.pc_config.get('CLEANUP','TYPE')
+            print(self.cleanup_type)
             if self.cleanup_type.lower() == "s3":
                 self.bucket = self.pc_config.get('CLEANUP','BUCKET')
                 self.s3_path = self.pc_config.get('CLEANUP','S3_PATH')
@@ -91,11 +93,11 @@ class HouseKeepingImpl(Housekeeping):
             elif self.cleanup_type.lower() == "hive":
                 self.hive_name = self.pc_config.get('CLEANUP','HIVE_DB')
                 self.hive_table = self.pc_config.get('CLEANUP','HIVE_TABLE')
-                self.hive_date_column = self.pc_config.get('CLEANUP','DATE_COLUMN')
-                if self.hive_date_column is None:
+                self.hive_date_column = self.pc_config.get('CLEANUP','DATE_COLUMN').strip()
+                if not self.hive_date_column:
                     raise Exception(f"DATE_COLUMN 不得為空值")
-                self.hive_date_format = self.pc_config.get('CLEANUP','DATE_FORMAT')
-                if self.hive_date_format is None:
+                self.hive_date_format = self.pc_config.get('CLEANUP','DATE_FORMAT').strip()
+                if not self.hive_date_format:
                     raise Exception(f"DATE_FORMAT 不得為空值")
                 elif self.hive_date_format not in ["%Y%m%d", "%Y-%m-%d"]:
                     raise Exception(f"DATE_FORMAT 只接受 %Y%m%d 或 %Y-%m-%d 設定值")
@@ -139,12 +141,12 @@ class HouseKeepingImpl(Housekeeping):
         return True
 
     def CleanupS3(self):
-        file_list = self.GetS3FileList()
+        file_list, file_date_list = self.GetS3FileList()
         if not file_list:
-            self.errorExit(f"S3 查找無符合檔案名稱模式的檔案")
+            self.logger_main.info(f"S3 查找無符合檔案名稱模式的檔案")
         else:
             self.logger_main.info(f"指定的路徑 {self.s3_path} 下的S3檔案列表: {file_list}")
-            need_keep, need_clean = self.OrganizeS3FileList(file_list)
+            need_keep, need_clean = self.OrganizeS3FileList(file_date_list)
             self.logger_main.info(f"需要保留的檔案列表: {need_keep}")
             self.logger_main.info(f"需要清理的檔案列表: {need_clean}")
             if len(need_clean) > 0:
@@ -154,7 +156,7 @@ class HouseKeepingImpl(Housekeeping):
                     self.logger_main.info(f"清理 S3 檔案後進行的檢查")
                     self.logger_main.info(f"等待 20 秒後進行檢查")
                     time.sleep(20)
-                    self.CheckS3FileList(need_clean)
+                    self.CheckS3FileList()
                 else:
                     self.errorExit(f"清理 S3 檔案失敗")
             else:
@@ -164,48 +166,66 @@ class HouseKeepingImpl(Housekeeping):
         try:
             target_path = str(self.s3_path + "/" + self.file_pattern)
             self.logger_main.info(f"欲查詢的檔案路徑與名稱模式: {target_path}")
-            file_list = self.s3Dao.listFiles(target_path)
+            file_objs_list = self.s3Dao.listFilesWithDate(target_path)
+            file_list = [file_obj[0] for file_obj in file_objs_list]
+            file_date_list = [(file_obj[0], file_obj[1]) for file_obj in file_objs_list]
+
         except Exception as e:
             raise Exception(f"取得S3檔案列表失敗: {e}")
-        return file_list
+        return file_list, file_date_list
     
-    def OrganizeS3FileList(self, file_list):
+    def OrganizeS3FileList(self, file_date_list):
         base_date = datetime.strptime(self.batch_date, "%Y%m%d").date()
         keeping_dates_list = []
+        str_keeping_dates_list = []
         for i in range(int(self.retention_days)):
-            keeping_dates_list.append((base_date - timedelta(days=i)).strftime("%Y%m%d"))
-        self.logger_main.info(f"需要保留的日期列表: {keeping_dates_list}")
+            keeping_dates_list.append((base_date - timedelta(days=i)))
+            str_keeping_dates_list.append((base_date - timedelta(days=i)).strftime("%Y%m%d"))
+        self.logger_main.info(f"需要保留的日期列表: {str_keeping_dates_list}")
         keeping_set = set(keeping_dates_list)
         need_keep, need_clean = [], []
         
-        for key in file_list:
-            date = self._extract_date_from_key(key)
+        for key, date in file_date_list:
             if date is None:
                 self.logger_main.warning(f"檔名無法解析日期，跳過: {key}")
                 continue
             elif date in keeping_set:
+                self.logger_main.debug(f"需要保留的檔案，日期在保留天數內: {key}, {date}")
                 need_keep.append(key)
-            elif date > self.batch_date:
+            elif date > base_date:
+                self.logger_main.debug(f"需要保留的檔案，日期在未來: {key}, {date}")
                 need_keep.append(key)
             else:
+                self.logger_main.debug(f"需要清理的檔案，日期在過去: {key}, {date}")
                 need_clean.append(key)
-
         return need_keep, need_clean
 
-    def _extract_date_from_key(self, key: str) -> str | None:
-        DATE_RE = re.compile(r'(?P<date>\d{8})(?:_C)?(?:\.[A-Za-z0-9]+)?$')
-        name = key.split("/")[-1]
-        m = DATE_RE.search(name)
-        if not m:
-            return None
-        return m.group("date")
+    def CheckS3FileList(self):
+        base_date = datetime.strptime(self.batch_date, "%Y%m%d").date()
+        out_of_date = (base_date - timedelta(days=int(self.retention_days)))
+
+        keeping_file_list, keeping_file_date_list = self.GetS3FileList()
+        if keeping_file_list and keeping_file_date_list:
+            self.logger_main.info(f"清理 S3 檔案後的檔案列表: {keeping_file_list}")
+            not_clear_files = []
+            for file, date in keeping_file_date_list:
+                if date <= out_of_date:
+                    self.logger_main.debug(f"檢查出不需要保留的檔案，日期不在保留天數內，也不是未來日期: {file}, {date}")
+                    not_clear_files.append(file)
+            if not_clear_files:
+                self.errorExit(f"清理失敗，仍然存在檔案: {not_clear_files}")
+            else:
+                self.logger_main.info(f"清理完後的S3檔案與需要清理的檔案無重疊")
+        else:
+            self.logger_main.info(f"清理完後的S3檔案為空")
+        self.logger_main.info(f"檢查 S3 檔案完成")
 
     def CleanupHive(self):
         self.logger_main.info(f"清理Hive分區")
         hive_dao = self.ConnectHiveDb()
         all_partitions = self.ShowHiveAllPartitions(hive_dao)
         if not all_partitions:
-            self.errorExit(f"指定的 Hive 資料庫 {self.hive_name} Table {self.hive_table} 無任何分區資料")
+            self.logger_main.info(f"指定的 Hive 資料庫 {self.hive_name} Table {self.hive_table} 無任何分區資料")
         else:
             self.logger_main.info(f"Hive所有分區: {all_partitions}")
             need_keep, need_clean = self.OrganizePartitionsToDates(all_partitions)
@@ -218,7 +238,7 @@ class HouseKeepingImpl(Housekeeping):
                     self.logger_main.info(f"清理Hive分區完成")
                     self.logger_main.info(f"等待 20 秒後進行檢查")
                     time.sleep(20)
-                    self.CheckHivePartitions(need_clean, hive_dao)
+                    self.CheckHivePartitions(hive_dao)
                 else:
                     keep_partitions = self.ShowHiveAllPartitions(hive_dao)
                     self.errorExit(f"清理失敗，Hive現在的分區: {keep_partitions}")
@@ -240,18 +260,6 @@ class HouseKeepingImpl(Housekeeping):
             return hive_dao
         except Exception as e:
             self.errorExit(f'[資料庫連線失敗] {e}')
-
-    def DeletePartitions(self, need_clean, hive_dao):
-        if self.hive_driver.lower() == 'hive2':
-            date_column = self.hive_date_column
-            batch_size = 2
-            for i in range(0, len(need_clean), batch_size):
-                dates_chunk = need_clean[i:i+batch_size]
-                specs = [f"PARTITION ({date_column}='{d}')" for d in dates_chunk]
-                sql = f"ALTER TABLE {self.hive_name}.{self.hive_table} DROP IF EXISTS " + ", ".join(specs) + " PURGE"
-                self.logger_main.info(f"[Hive]預計執行的 SQL: {sql}")
-                hive_dao.executeSql(sql)
-            return True
     
     def ShowHiveAllPartitions(self, hive_dao):
         if self.hive_driver.lower() == 'hive2':
@@ -259,47 +267,82 @@ class HouseKeepingImpl(Housekeeping):
             all_partitions = hive_dao.executeQuery(sql)
             return all_partitions
 
-    def OrganizePartitionsToDates(self, rows):
+    def OrganizePartitionsToDates(self, partitions):
         base_date = datetime.strptime(self.batch_date, self.hive_date_format).date()
         keeping_dates_list = []
+        str_keeping_dates_list = []
         for i in range(int(self.retention_days)):
-            keeping_dates_list.append((base_date - timedelta(days=i)).strftime(self.hive_date_format))
-        self.logger_main.info(f"需要保留的日期列表: {keeping_dates_list}")
+            keeping_dates_list.append((base_date - timedelta(days=i)))
+        self.logger_main.info(f"需要保留的日期列表: {str_keeping_dates_list}")
         keeping_set = set(keeping_dates_list)
         need_keep, need_clean = [], []
         
-        for row in rows:
-            part_str = row[0]
+        for partition in partitions:
+            partition_str = partition[0]
+            parsed_partition_dict = dict(seg.split("=", 1) for seg in partition_str.split("/"))
+            
+            if self.hive_date_column not in parsed_partition_dict:
+                self.errorExit(f"分區欄位缺乏 {self.hive_date_column} 欄位")
+            
+            str_date = parsed_partition_dict[self.hive_date_column]  
             try:
-                date = part_str.split("=")[1]
-            except Exception as e:
-                self.errorExit(f"解析分區日期失敗: {e}")
-            if date in keeping_set or date > self.batch_date:
-                need_keep.append(date)
+                parsed_date = datetime.strptime(str_date, self.hive_date_format).date()
+            except ValueError:
+                    self.errorExit(f"分區日期格式與指定格式 {self.hive_date_format} 不符")
+            
+            if parsed_date in keeping_set or parsed_date > self.batch_date:
+                need_keep.append(partition)
             else:
-                need_clean.append(date)
+                need_clean.append(partition)
         return need_keep, need_clean
 
-    def CheckS3FileList(self, need_clean):
-        keeping_file_list = self.GetS3FileList()
-        if keeping_file_list:
-            self.logger_main.info(f"清理 S3 檔案後的檔案列表: {keeping_file_list}")
-            overlap = set(keeping_file_list) & set(need_clean)
-            if overlap:
-                self.errorExit(f"清理失敗，仍然存在檔案: {overlap}")
-            else:
-                self.logger_main.info(f"清理完後的S3檔案與需要清理的檔案無重疊")
-        else:
-            self.logger_main.info(f"清理完後的S3檔案為空")
-        self.logger_main.info(f"檢查 S3 檔案完成")
+    def DeletePartitions(self, need_clean_partitions, hive_dao):
+        if self.hive_driver.lower() == 'hive2':
+            date_column = self.hive_date_column
+            batch_size = 2
+            for i in range(0, len(need_clean_partitions), batch_size):
+                partitions_chunk = need_clean_partitions[i:i+batch_size]
+                self.logger_main.info(f"批次：{i}，需要清理的分區: {partitions_chunk}")
+                
+                partition_specs = []
+                for partition_str in partitions_chunk:
+                    parsed_partition_dict = dict(seg.split("=", 1) for seg in partition_str.split("/"))
 
-    def CheckHivePartitions(self, need_clean, hive_dao):
+                    if self.hive_date_column not in parsed_partition_dict:
+                        self.errorExit(f"分區欄位缺乏 {self.hive_date_column} 欄位")
+                    
+                    inside_partition = ", ".join(f"{k}='{v}'" for k, v in parsed_partition_dict.items())
+                    partition_specs.append(f"PARTITION ({inside_partition})")
+
+                sql = f"ALTER TABLE {self.hive_name}.{self.hive_table} DROP IF EXISTS " + ", ".join(partition_specs) + " PURGE"
+                self.logger_main.info(f"[Hive]批次：{i}，預計執行的 SQL: {sql}")
+                hive_dao.executeSql(sql)
+            return True
+    
+    def CheckHivePartitions(self, hive_dao):
+        base_date = datetime.strptime(self.batch_date, self.hive_date_format).date()
+        out_of_date = (base_date - timedelta(days=int(self.retention_days)))
+        
         keep_partitions = self.ShowHiveAllPartitions(hive_dao)
         if keep_partitions:
             self.logger_main.info(f"清理完後的Hive所有分區: {keep_partitions}")
-            overlap = set(keep_partitions) & set(need_clean)
-            if overlap:
-                self.errorExit(f"清理失敗，仍然存在分區: {overlap}")
+            not_clear_partitions = []
+            for partition in keep_partitions:
+                partition_str = partition[0]
+                parsed_partition_dict = dict(seg.split("=", 1) for seg in partition_str.split("/"))
+
+                if self.hive_date_column not in parsed_partition_dict:
+                    self.errorExit(f"分區欄位缺乏 {self.hive_date_column} 欄位")
+                str_date = parsed_partition_dict[self.hive_date_column]  
+                try:
+                    parsed_date = datetime.strptime(str_date, self.hive_date_format).date()
+                except ValueError:
+                        self.errorExit(f"分區日期格式與指定格式 {self.hive_date_format} 不符")
+                if parsed_date <= out_of_date:
+                    not_clear_partitions.append(partition)
+            
+            if not_clear_partitions:
+                self.errorExit(f"清理失敗，仍然存在分區: {not_clear_partitions}")
             else:
                 self.logger_main.info(f"清理完後的Hive所有分區與需要清理的分區無重疊")
         else:

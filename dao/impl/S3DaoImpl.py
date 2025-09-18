@@ -26,6 +26,7 @@ import os
 import base64, hashlib
 import re
 import fnmatch 
+from zoneinfo import ZoneInfo
 
 #一次性刪除多個 S3 檔案時，需要手動注入 Content-MD5 的 header，因為 boto3 不支援自動生成，然後 S3 會檢查 Content-MD5 的 header 是否與檔案的 XML 是否一致
 def _inject_content_md5(request, **kwargs):
@@ -83,6 +84,25 @@ class S3DaoImpl(FileDao):
                     #             f"檢查檔案名稱樣式失敗：疑似正規表示式不合法（{e}）。請統一使用 glob 或合法 regex。"
                     #         )
             return files
+        except Exception as e:
+            raise Exception(f"S3 列出檔案失敗: {e}")
+    
+    def listFilesWithDate(self, pattern: str) -> List[str]:
+        try:
+            paginator = self.s3.get_paginator('list_objects_v2')
+            page_iterator = paginator.paginate(Bucket=self.bucket)
+
+            files = []
+            for page in page_iterator:
+                for obj in page.get('Contents', []):
+                    key = obj['Key']
+                    # print(f"key: {key}, LastModified: {obj['LastModified']}")
+                    if FilenameProcessor._match_name_pattern(key, pattern):
+                        date = obj['LastModified'].astimezone(ZoneInfo('Asia/Taipei')).date()
+                        files.append((key, date))
+            print(f"files: {files}")
+            return files
+           
         except Exception as e:
             raise Exception(f"S3 列出檔案失敗: {e}")
 
