@@ -166,6 +166,70 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
         if (hk.run()):
             logger_main.info("Run Housekeeping success")
             exit(0)
+
+    elif (fun == "AL"):
+        logger_main.info("[AL] Run Airbyte and Load Date to Hive Table")
+
+        try:
+            logger_main.info("[AL] 讀取 SQL 檔案")
+            sql_1 = pc_config.get('SQL', 'AL_SQL1')
+            sql_2 = pc_config.get('SQL', 'AL_SQL2')
+        except Exception as e:
+            logger_main.error(f"[AL] 讀取 SQL 檔案錯誤 {e}")
+            errorHandler.exceptionWriter(f"[AL] 讀取 SQL 檔案錯誤 {e}")
+            exit(1)
+
+        try:
+            args_obj = json.loads(fc_args)  # fc_args 是 argparse 取到的整段 JSON 字串
+            sql1_args = json.dumps(args_obj.get('sql1_args', {}))
+            sql2_args = json.dumps(args_obj.get('sql2_args', {}))
+        except Exception as e:
+            logger_main.error(f"[AL] 讀取 SQL 檔案錯誤 {e}")
+            errorHandler.exceptionWriter(f"[AL] 讀取 SQL 檔案錯誤 {e}")
+            exit(1)
+
+        try:
+            airbyte = AirbyteExecutionImpl(main_config, fc_config, fc_args)
+        except Exception as e:
+            logger_main.error(f"[AL-Airbyte] 建立AirbyteExecutionImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"[AL-Airbyte] 建立AirbyteExecutionImpl錯誤 {e}")
+            exit(1)
+        result = airbyte.run()
+        if result == True:
+            logger_main.info("[AL-Airbyte] Run Airbyte Execution success")
+        elif result == False:
+            logger_main.error("[AL-Airbyte] Run Airbyte Execution failed")
+            exit(1)
+
+        try:
+            sql_file_to_table = SqlExecutionImpl(main_config, fc_config, sql1_args, sql_1)
+        except Exception as e:
+            logger_main.error(f"[AL-SQL1] 建立SqlExecutionImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"[AL-SQL1] 建立SqlExecutionImpl錯誤 {e}")
+            exit(1)
+        result = sql_file_to_table.run()
+        if result == True:
+            logger_main.info("[AL-SQL1] Run Sql Execution success")
+        elif result == False:
+            logger_main.error("[AL-SQL1] Run Sql Execution failed")
+            exit(1)
+        
+        try:
+            sql_table_to_table = SqlExecutionImpl(main_config, fc_config, sql2_args, sql_2)
+        except Exception as e:
+            logger_main.error(f"[AL-SQL2] 建立SqlExecutionImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"[AL-SQL2] 建立SqlExecutionImpl錯誤 {e}")
+            exit(1)
+        result = sql_table_to_table.run()
+        if result == True:
+            logger_main.info("[AL-SQL2] Run Sql Execution success")
+        elif result == False:
+            logger_main.error("[AL-SQL2] Run Sql Execution failed")
+            exit(1)
+        
+        logger_main.info("[AL-Airbyte] Run Airbyte and Load Date to Hive Table success")
+        exit(0)
+        
     else:
         print("No such function")
         exit(1)
