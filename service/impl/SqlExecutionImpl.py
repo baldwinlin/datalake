@@ -166,7 +166,7 @@ class SqlExecutionImpl(SqlExecution):
             args_dict = json.loads(self.args_str)
 
             for key,value in args_dict.items():
-                sql_str = sql_str.replace(key, value)
+                sql_str = sql_str.replace(key, str(value))
 
         sql_temp_file = f"{self.temp_path}{self.sql_file_name}"
         with open(sql_temp_file, "w", encoding="UTF-8") as f:
