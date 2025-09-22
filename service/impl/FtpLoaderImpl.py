@@ -352,7 +352,7 @@ class FtpLoaderImpl(FtpLoader):
 
         """上傳檔案到S3"""
         error_upload_files_list = []
-        self.logger_main.info(f"開始上傳檔案到S3.....")
+        self.logger_main.info(f"開始上傳檔案到S3 ，上傳 bucket：{self.s3_bucket}，上傳路徑：{self.target_path}")
         for file_name in reformated_files_list:
             try:
                 self.writeToS3(file_name)
@@ -452,7 +452,7 @@ class FtpLoaderImpl(FtpLoader):
         
             """轉換編碼為 utf-8"""
             try:
-                Reformatter.encoding_to_uft_8(temp_processing_file_path, self.encoding, temp_processing_file_path)
+                Reformatter.encoding_to_utf_8(temp_processing_file_path, self.encoding, temp_processing_file_path)
                 reformated_files_list.append(file)
                 self.logger_main.info(f"檔案 {file} 完成轉換編碼")
             except Exception as e:

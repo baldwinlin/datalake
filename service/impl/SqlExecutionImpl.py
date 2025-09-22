@@ -164,7 +164,7 @@ class SqlExecutionImpl(SqlExecution):
         #Replace SQL arguments
         if(self.args_str is not None):
             args_dict = json.loads(self.args_str)
-
+            
             for key,value in args_dict.items():
                 sql_str = sql_str.replace(key, str(value))
 

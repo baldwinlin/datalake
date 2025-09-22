@@ -12,7 +12,7 @@ class Reformatter:
         return decoded_content
             
     @staticmethod
-    def encoding_to_uft_8(file_path: str, encoding: str, temp_path: str):
+    def encoding_to_utf_8(file_path: str, encoding: str, temp_path: str):
         with open(file_path, "rb") as f:
             content = f.read()
 
@@ -30,7 +30,11 @@ class Reformatter:
         with open(file_path, "rb") as f:
             content_bytes = f.read()
 
-        delimiter = delimiter.encode("utf-8")
+        if '\\u' in delimiter or '\\t' in delimiter:
+            delimiter = delimiter.encode().decode('unicode_escape').encode("utf-8")
+        else:
+            delimiter = delimiter.encode("utf-8")
+        
         col_sizes = Reformatter._read_sizes_file(col_size_file, encoding = "utf-8")
 
         #將原始檔案內容分行寫進列表
@@ -76,7 +80,7 @@ class Reformatter:
         return col_sizes
 
     @staticmethod
-    def _split_line_by_col_size(line: str, col_sizes: list[int]):
+    def _split_line_by_col_size(line: bytes, col_sizes: list[int]) -> list[bytes]:
         #針對一筆資料進行分隔
         fields, pos = [], 0
         for col_size in col_sizes:

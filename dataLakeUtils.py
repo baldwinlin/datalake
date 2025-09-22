@@ -180,15 +180,6 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
             exit(1)
 
         try:
-            args_obj = json.loads(fc_args)  # fc_args 是 argparse 取到的整段 JSON 字串
-            sql1_args = json.dumps(args_obj.get('sql1_args', {}))
-            sql2_args = json.dumps(args_obj.get('sql2_args', {}))
-        except Exception as e:
-            logger_main.error(f"[AL] 讀取 SQL 檔案錯誤 {e}")
-            errorHandler.exceptionWriter(f"[AL] 讀取 SQL 檔案錯誤 {e}")
-            exit(1)
-
-        try:
             airbyte = AirbyteExecutionImpl(main_config, fc_config, fc_args)
         except Exception as e:
             logger_main.error(f"[AL-Airbyte] 建立AirbyteExecutionImpl錯誤 {e}")
@@ -202,29 +193,29 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
             exit(1)
 
         try:
-            sql_file_to_table = SqlExecutionImpl(main_config, fc_config, sql1_args, sql_1)
+            create_table = SqlExecutionImpl(main_config, fc_config, fc_args, sql_1)
         except Exception as e:
-            logger_main.error(f"[AL-SQL1] 建立SqlExecutionImpl錯誤 {e}")
-            errorHandler.exceptionWriter(f"[AL-SQL1] 建立SqlExecutionImpl錯誤 {e}")
+            logger_main.error(f"[AL-Create Table] 建立SqlExecutionImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"[AL-Create Table] 建立SqlExecutionImpl錯誤 {e}")
             exit(1)
-        result = sql_file_to_table.run()
+        result = create_table.run()
         if result == True:
-            logger_main.info("[AL-SQL1] Run Sql Execution success")
+            logger_main.info("[AL-Create Table] Run Sql Execution success")
         elif result == False:
-            logger_main.error("[AL-SQL1] Run Sql Execution failed")
+            logger_main.error("[AL-Create Table] Run Sql Execution failed")
             exit(1)
         
         try:
-            sql_table_to_table = SqlExecutionImpl(main_config, fc_config, sql2_args, sql_2)
+            insert_table = SqlExecutionImpl(main_config, fc_config, fc_args, sql_2)
         except Exception as e:
-            logger_main.error(f"[AL-SQL2] 建立SqlExecutionImpl錯誤 {e}")
-            errorHandler.exceptionWriter(f"[AL-SQL2] 建立SqlExecutionImpl錯誤 {e}")
+            logger_main.error(f"[AL-Insert Table] 建立SqlExecutionImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"[AL-Insert Table] 建立SqlExecutionImpl錯誤 {e}")
             exit(1)
-        result = sql_table_to_table.run()
+        result = insert_table.run()
         if result == True:
-            logger_main.info("[AL-SQL2] Run Sql Execution success")
+            logger_main.info("[AL-Insert Table] Run Sql Execution success")
         elif result == False:
-            logger_main.error("[AL-SQL2] Run Sql Execution failed")
+            logger_main.error("[AL-Insert Table] Run Sql Execution failed")
             exit(1)
         
         logger_main.info("[AL-Airbyte] Run Airbyte and Load Date to Hive Table success")
