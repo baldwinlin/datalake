@@ -214,7 +214,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
 
     def getConnectionId(self):
         offset = 0
-        limit = 50
+        limit = 2000
         list_connections_api = f"{self.airbyte_root_api}/connections?workspaceIds={self.workspace_ids}&offset={offset}&limit={limit}"
         headers = {
             "accept": "application/json",
