@@ -202,6 +202,8 @@ class FtpWritterImpl(FtpWritter):
             except UnicodeDecodeError:
                 # 如果轉換失敗，則返回原始字串
                 return delimiter_str
+        elif isinstance(delimiter_str, str) and '\\t' in delimiter_str:
+            return '\t'
         else:
             # 如果沒有 '\\u'，則直接返回原始字串
             return delimiter_str
@@ -334,11 +336,25 @@ class FtpWritterImpl(FtpWritter):
             else:
                 return "str"
 
+        def detectDtype(db_type):
+            print('data_type: ', db_type)
+            if 'CHAR' in db_type:
+                return 'str'
+            elif 'INTEGER' in db_type:
+                return 'num'
+            # elif 'FLOAT' in db_type:
+            #    return 'num'
+            # elif 'DECIMAL' in db_type:
+            #    return 'num'
+            else:
+                return 'str'
+
         col_meta = []
         for i, col in enumerate(col_info):
             col_name = col[0]
             col_length = field_lengths[i]
-            dtype = detect_dtype(col[1])
+            # dtype = detect_dtype(col[1])
+            dtype = detectDtype(str(col[1]))
             col_meta.append((col_name, col_length, dtype))
 
 
@@ -444,7 +460,7 @@ class FtpWritterImpl(FtpWritter):
         sign_str = ""
         if value is None:
             value_str = ""
-        elif dtype in ('num', 'fload') and value < 0:
+        elif dtype in ('num', 'float') and value < 0:
             value_str = str(-value)
             sign_str = "-"
         else:
@@ -485,7 +501,7 @@ class FtpWritterImpl(FtpWritter):
             self.errorExit(f"[執行SQL失敗] {e}")
 
         # 欄位資訊
-        col_info = cursor.description  # [(name, type, ...), ...]
+        col_info = cursor.description  # (name, type_code, display_size, internal_size, precision, scale, null_ok)
 
         # 自動判斷型別
         def detect_dtype(db_type):
@@ -498,11 +514,25 @@ class FtpWritterImpl(FtpWritter):
             else:
                 return "str"
 
+        def detectDtype(db_type):
+            print('data_type: ', db_type)
+            if 'CHAR' in db_type:
+                return 'str'
+            elif 'INTEGER' in db_type:
+                return 'num'
+            #elif 'FLOAT' in db_type:
+            #    return 'num'
+            #elif 'DECIMAL' in db_type:
+            #    return 'num'
+            else:
+                return 'str'
+
         col_meta = []
         for i, col in enumerate(col_info):
             col_name = col[0]
             col_length = field_lengths[i]
-            dtype = detect_dtype(col[1])
+            #dtype = detect_dtype(col[1])
+            dtype = detectDtype(str(col[1]))
             col_meta.append((col_name, col_length, dtype))
 
         try:
