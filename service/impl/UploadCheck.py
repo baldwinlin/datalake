@@ -190,6 +190,58 @@ class UploadCheckImpl(UploadCheck):
                 cursor.close()
 
     def compareTableSchema(self, conn, source_table, target_table):
+        cursor = None
+        try:
+            cursor = conn.cursor()
+            sql_source = f"DESCRIBE {source_table}"
+            cursor.execute(sql_source)
+            source_schema = cursor.fetchall()
+
+            sql_source = f"DESCRIBE {target_table}"
+            cursor.execute(sql_source)
+            target_schema = cursor.fetchall()
+
+            # 3. 比對欄位數量
+            if len(source_schema) != len(target_schema):
+                err_msg = ''
+                source_col_set = set()
+                target_col_set = set()
+                for col in source_schema:
+                    source_col_set.add(col[0])
+                for col in target_schema:
+                    target_col_set.add(col[0])
+                missing_in_target = source_col_set.difference(target_col_set)
+                if missing_in_target:
+                    err_msg = f'在目標資料表缺少的欄位: {missing_in_target}'
+                missing_in_source = target_col_set.difference(source_col_set)
+                if missing_in_source:
+                    err_msg += f' 在來源資料表缺少的欄位: {missing_in_source}'
+
+                return False, err_msg
+
+            for i in range(len(source_schema)):
+                source_col = source_schema[i]
+                target_col = target_schema[i]
+
+                # 比較欄位名稱 (第0個元素)
+                if source_col[0] != target_col[0]:
+                    return False, f"欄位名稱不一致。來源表格的第 {i + 1} 個欄位是 '{source_col[0]}', 但目標表格是 '{target_col[0]}'."
+
+                # 比較欄位型態 (第1個元素，代表資料型態的內部代碼)
+                if source_col[1] != target_col[1]:
+                    return False, f"欄位型態不一致。來源表格的 '{source_col[0]}' 欄位型態為 '{source_col[1]}', 但目標表格為 '{target_col[1]}'."
+
+            return True, "欄位名稱與型態皆一致。"
+
+        except jaydebeapi.DatabaseError as e:
+            return False, f"資料庫錯誤: {e}"
+        except Exception as e:
+            return False, f"發生錯誤: {e}"
+        finally:
+            if cursor:
+                cursor.close()
+
+    def compareTableSchema_(self, conn, source_table, target_table):
         """
         比對來源表格與目標表格的 schema（欄位名稱與型態）是否一致。
 
