@@ -51,6 +51,7 @@ class FtpWritterImpl(FtpWritter):
         self.errorHandler = None
         self.args_dict = json.loads(self.args_str)
         self.log_level = main_config["LOG"].get("LOG_LEVEL", "INFO").upper()
+        self.limit_cnt = 1000000
 
         try:
             temp_path = self.main_config.get('LOG','TEMP_PATH')
@@ -201,6 +202,8 @@ class FtpWritterImpl(FtpWritter):
             except UnicodeDecodeError:
                 # 如果轉換失敗，則返回原始字串
                 return delimiter_str
+        elif isinstance(delimiter_str, str) and '\\t' in delimiter_str:
+            return '\t'
         else:
             # 如果沒有 '\\u'，則直接返回原始字串
             return delimiter_str
@@ -241,6 +244,160 @@ class FtpWritterImpl(FtpWritter):
             return dao
         except Exception as e:
             self.errorExit(f'[資料庫連線失敗] {e}')
+
+    def exportFileByOffset(self, conn, sql_str, output_file, delimiter=",", new_line_ch="\n", encoding="utf-8"):
+        """
+        從資料庫中查詢資料並匯出到檔案，採用分批讀取以避免記憶體溢出。
+
+        Args:
+            conn: 資料庫連線物件。
+            sql_str: 要執行的 SQL 查詢字串。
+            output_file: 輸出檔案的路徑。
+            delimiter: 欄位分隔符號，預設為逗號。
+            new_line_ch: 換行字元，預設為 \n。
+            encoding: 檔案編碼，預設為 utf-8。
+        Returns:
+            int: 實際寫入檔案的資料筆數。
+        """
+        chunk_size = 10000 #每次從資料庫讀取的資料筆數
+        sql_str = sql_str.replace(';', ' ')
+
+        cnt = 0
+        cursor = None
+        try:
+            cursor = conn.cursor()
+            with open(output_file, "w", encoding=encoding, errors="replace", newline="") as f:
+                # 先寫欄位名稱
+                if(self.tg_header.lower() == 'y'):
+                    sql = f'{sql_str} LIMIT 1'
+                    cursor.execute(sql)
+                    col_names = [desc[0] for desc in cursor.description]
+                    f.write(delimiter.join(col_names) + new_line_ch)
+
+                current_offset = 0
+                while True:
+                    sql = f'{sql_str} LIMIT {self.limit_cnt} OFFSET {current_offset};'
+                    cursor.execute(sql)
+                    rows = cursor.fetchmany(chunk_size)
+                    if not rows:
+                        break
+                    # 採用分批讀取的方式
+                    while True:
+                        # 寫入每一筆資料
+                        for row in rows:
+                            f.write(delimiter.join(str(v) if v is not None else "" for v in row) + new_line_ch)
+                            cnt += 1
+                        rows = cursor.fetchmany(chunk_size)
+                        if not rows:
+                            break
+
+                    current_offset += self.limit_cnt
+
+            self.logger.info(f'[產出檔案成功] {output_file}')
+            self.logger.info(f'[產出筆數: {cnt}] ')
+            return cnt
+
+        except Exception as e:
+            self.errorExit(f'[產出檔案錯誤] {e}')
+        finally:
+            if cursor:
+                cursor.close()
+
+    def exportFixedLengthFileByOffset(self, conn, sql, output_file, field_lengths, line_ending="\n", encoding="big5"):
+        """
+        從資料庫讀取資料，輸出固定長度檔案 (含欄位名稱 Header)，採用分批讀取。
+        :param sql: 查詢語法
+        :param output_file: 輸出檔案路徑
+        :param field_lengths: 欄位長度list
+        :param line_ending: 換行符號
+        :param encoding: 輸出編碼
+        """
+        chunk_size = 10000 #每次從資料庫讀取的資料筆數
+        sql_str = sql.rstrip(";")
+
+        try:
+            sql = f'{sql_str} LIMIT 1'
+            cursor = conn.cursor()
+            cursor.execute(sql)
+        except Exception as e:
+            self.errorExit(f"[執行SQL失敗] {e}")
+
+        # 欄位資訊
+        col_info = cursor.description  # [(name, type, ...), ...]
+
+        # 自動判斷型別
+        def detect_dtype(db_type):
+            if db_type == jaydebeapi.STRING:
+                return "str"
+            elif db_type == jaydebeapi.NUMBER:
+                return "num"
+            elif db_type == jaydebeapi.FLOAT:
+                return "float"
+            else:
+                return "str"
+
+        def detectDtype(db_type):
+            print('data_type: ', db_type)
+            if 'CHAR' in db_type:
+                return 'str'
+            elif 'INTEGER' in db_type:
+                return 'num'
+            # elif 'FLOAT' in db_type:
+            #    return 'num'
+            # elif 'DECIMAL' in db_type:
+            #    return 'num'
+            else:
+                return 'str'
+
+        col_meta = []
+        for i, col in enumerate(col_info):
+            col_name = col[0]
+            col_length = field_lengths[i]
+            # dtype = detect_dtype(col[1])
+            dtype = detectDtype(str(col[1]))
+            col_meta.append((col_name, col_length, dtype))
+
+
+        try:
+            with open(output_file, "wb") as f:
+                # 輸出 Header
+                if self.tg_header.lower() == 'y':
+                    header_bytes = b""
+                    for col_name, col_length, _ in col_meta:
+                        header_bytes += self.formatField(col_name, col_length, "str", encoding)
+                    f.write(header_bytes + line_ending.encode(encoding))
+
+                # 輸出資料列
+                cnt = 0
+                current_offset = 0
+                while True:
+                    sql = f'{sql_str} LIMIT {self.limit_cnt} OFFSET {current_offset};'
+                    cursor.execute(sql)
+                    rows = cursor.fetchmany(chunk_size)
+                    if not rows:
+                        break  # 如果沒有更多資料，就結束迴圈
+                    while True:
+                        for row in rows:
+                            line_bytes = b""
+                            for idx, (col_name, col_length, dtype) in enumerate(col_meta):
+                                line_bytes += self.formatField(row[idx], col_length, dtype, encoding)
+                            f.write(line_bytes + line_ending.encode(encoding))
+                            cnt += 1
+                        rows = cursor.fetchmany(chunk_size)
+                        if not rows:
+                            break
+                    current_offset += self.limit_cnt
+
+            self.logger.info(f'[產出檔案成功] {output_file}')
+            self.logger.info(f'[產出筆數: {cnt}] ')
+            return cnt
+        except Exception as e:
+            self.errorExit(f'[產出檔案錯誤] {e}')
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
     def exportFile(self, conn, sql_str, output_file, delimiter=",", new_line_ch="\n", encoding="utf-8"):
         """
@@ -303,7 +460,7 @@ class FtpWritterImpl(FtpWritter):
         sign_str = ""
         if value is None:
             value_str = ""
-        elif dtype in ('num', 'fload') and value < 0:
+        elif dtype in ('num', 'float') and value < 0:
             value_str = str(-value)
             sign_str = "-"
         else:
@@ -344,7 +501,7 @@ class FtpWritterImpl(FtpWritter):
             self.errorExit(f"[執行SQL失敗] {e}")
 
         # 欄位資訊
-        col_info = cursor.description  # [(name, type, ...), ...]
+        col_info = cursor.description  # (name, type_code, display_size, internal_size, precision, scale, null_ok)
 
         # 自動判斷型別
         def detect_dtype(db_type):
@@ -357,11 +514,25 @@ class FtpWritterImpl(FtpWritter):
             else:
                 return "str"
 
+        def detectDtype(db_type):
+            print('data_type: ', db_type)
+            if 'CHAR' in db_type:
+                return 'str'
+            elif 'INTEGER' in db_type:
+                return 'num'
+            #elif 'FLOAT' in db_type:
+            #    return 'num'
+            #elif 'DECIMAL' in db_type:
+            #    return 'num'
+            else:
+                return 'str'
+
         col_meta = []
         for i, col in enumerate(col_info):
             col_name = col[0]
             col_length = field_lengths[i]
-            dtype = detect_dtype(col[1])
+            #dtype = detect_dtype(col[1])
+            dtype = detectDtype(str(col[1]))
             col_meta.append((col_name, col_length, dtype))
 
         try:

@@ -109,8 +109,9 @@ class UploadCheckImpl(UploadCheck):
         return logging.getLogger(log_name)
 
     def errorExit(self, error_message, error_traceback = ''):
-        self.logger.debug(error_traceback)
         self.logger.error(error_message)
+        if error_traceback:
+            self.logger.debug(error_traceback)
         #self.errorHandler.exceptionWriter(error_message)
         exit(1)
 
@@ -132,6 +133,23 @@ class UploadCheckImpl(UploadCheck):
             return dao
         except Exception as e:
             self.errorExit(f'[資料庫連線失敗] {e}')
+
+    def truncTgTable(self, conn, target_table):
+        cursor = None
+        try:
+            cursor = conn.cursor()
+
+            sql = f'truncate table {target_table}'
+            # 3. 執行單一 SQL 語法
+            cursor.execute(sql)
+
+            self.logger.info(f'[Truncate target table完成]')
+
+        except Exception as e:
+            self.errorExit(f"[Truncate target table失敗] {e}")
+        finally:
+            if cursor:
+                cursor.close()
 
     def insertData(self, conn, source_table, target_table):
         """
@@ -196,7 +214,21 @@ class UploadCheckImpl(UploadCheck):
 
             # 3. 比對欄位數量
             if len(source_schema) != len(target_schema):
-                return False, f"欄位數量不一致。來源表格有 {len(source_schema)} 個欄位，目標表格有 {len(target_schema)} 個。"
+                err_msg = ''
+                source_col_set = set()
+                target_col_set= set()
+                for col in source_schema:
+                    source_col_set.add(col[0])
+                for col in target_schema:
+                    target_col_set.add(col[0])
+                missing_in_target = source_col_set.difference(target_col_set)
+                if missing_in_target:
+                    err_msg = f'在目標資料表缺少的欄位: {missing_in_target}'
+                missing_in_source = target_col_set.difference(source_col_set)
+                if missing_in_source:
+                    err_msg += f' 在來源資料表缺少的欄位: {missing_in_source}'
+
+                return False, err_msg
 
             # 4. 比對每個欄位的名稱和型態
             for i in range(len(source_schema)):
@@ -291,10 +323,18 @@ class UploadCheckImpl(UploadCheck):
         source_table = f'{self.src_db}.{self.src_table}'
         target_table = f'{self.tg_db}.{self.tg_table}'
         if total_cnt > 0:
+            #Truncate target table
+            self.truncTgTable(dao.conn, target_table)
+            #Write data
             self.insertData(dao.conn, source_table, target_table)
 
         #Write target control table
-        sql = "insert into {}.{} values(?, ?, ?, ?)".format(self.tg_db, self.tg_ctl_table)
+        if self.driver == 'hive2':
+            sql = "INSERT OVERWRITE {}.{} values(?, ?, ?, ?) PARTITION(table_name, batch_date, batch_time)".format(
+                self.tg_db, self.tg_ctl_table)
+        else:
+            sql = "INSERT INTO {}.{} values(?, ?, ?, ?)".format(
+                self.tg_db, self.tg_ctl_table)
         try:
             cursor = dao.conn.cursor()
             cursor.execute(sql, check_row)
