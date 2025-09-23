@@ -80,7 +80,6 @@ class DbCompare():
 
             # 2. 取得目標表格的 count
             tg_cursor.execute(sql)
-            tg_cursor.execute(sql)
             rs = tg_cursor.fetchone()
             tg_cnt = rs[0] if rs else 0
 

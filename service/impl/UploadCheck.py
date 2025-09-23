@@ -382,12 +382,14 @@ class UploadCheckImpl(UploadCheck):
 
         #Write target control table
         if self.driver == 'hive2':
-            sql = "INSERT OVERWRITE {}.{} values(?, ?, ?, ?) PARTITION(table_name, batch_date, batch_time)".format(
+            sql = "INSERT OVERWRITE {}.{} values(?, ?, ?, ?)".format(
                 self.tg_db, self.tg_ctl_table)
         else:
             sql = "INSERT INTO {}.{} values(?, ?, ?, ?)".format(
                 self.tg_db, self.tg_ctl_table)
         try:
+            self.logger.debug(f"[SQL] {sql}")
+            self.logger.debug(f"[PARAMS] {check_row}")
             cursor = dao.conn.cursor()
             cursor.execute(sql, check_row)
         except Exception as e:
