@@ -632,7 +632,7 @@ class FtpWritterImpl(FtpWritter):
         for file in filelist:
             remote_path = download_path / Path(file).name
             self.logger.debug(f"[Download file] {file} -> {remote_path}")
-            download_files.append(remote_path)
+            download_files.append(str(remote_path))
             try:
                 s3SrcDao.downloadFile(file, remote_path)
             except Exception as e:
