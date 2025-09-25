@@ -30,7 +30,7 @@ from service.impl.SqlExecutionImpl  import *
 from service.impl.DbtExecutionImpl import *
 from service.impl.AirbyteExecutionImpl import *
 from service.impl.AirbyteCancelForced import *
-from service.impl.UploadCheck import *
+from service.impl.UploadCheckImpl import *
 from service.impl.HouseKeepingImpl import *
 from util.CleanTempFIle import *
 

@@ -1,6 +1,6 @@
 #coding:utf-8
 '''
-UploadCheck.py
+UploadCheckImpl.py
 Object          : 上架檢核
 Author          :
 Version         :
