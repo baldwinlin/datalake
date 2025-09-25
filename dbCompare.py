@@ -80,7 +80,6 @@ class DbCompare():
 
             # 2. 取得目標表格的 count
             tg_cursor.execute(sql)
-            tg_cursor.execute(sql)
             rs = tg_cursor.fetchone()
             tg_cnt = rs[0] if rs else 0
 
@@ -115,8 +114,6 @@ class DbCompare():
             target_schema = tg_cursor.fetchall()
             #print("Target schema: ", target_schema)
 
-
-
             # 3. 比對欄位數量
             if len(source_schema) != len(target_schema):
                 print(f"[{table_name}] 欄位數量不一致。來源表格有 {len(source_schema)} 個欄位，目標表格有 {len(target_schema)} 個。")
@@ -133,7 +130,6 @@ class DbCompare():
                 # 比較欄位型態 (第1個元素)
                 if source_col[1] != target_col[1]:
                     print(f"[{table_name}] 欄位型態不一致。來源表格的 '{source_col[0]}' 欄位型態為 '{source_col[1]}', 但目標表格為 '{target_col[1]}'.")
-
 
         except jaydebeapi.DatabaseError as e:
             return False, f"資料庫錯誤: {e}"
@@ -188,7 +184,6 @@ class DbCompare():
             return ""
 
 
-
     def compareTableData(self, table_name):
         """
         從兩個不同資料庫的表格中，分批讀取資料並進行哈希比對。
@@ -207,7 +202,7 @@ class DbCompare():
         partition_names = []
         if self.src_driver.lower() == 'hive2':
             with self.src_conn.cursor() as cursor:
-                cursor.execute(f'show partition {table_name}')
+                cursor.execute(f'show partitions {table_name}')
                 rows = cursor.fetchall()
                 partition_names = [row[0] for row in rows].sort(reverse=True)
 
@@ -273,8 +268,6 @@ class DbCompare():
             # extra_in_target = target_hashes.difference(source_hashes)
             # if extra_in_target:
             #     print(f"\n- 在來源資料庫中缺失的筆數 (目標多出的): {len(extra_in_target)}")
-
-
 
 
     def getDatabaseTables(self, conn):

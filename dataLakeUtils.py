@@ -174,6 +174,7 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
             logger_main.info("[AL] 讀取 SQL 檔案")
             sql_1 = pc_config.get('SQL', 'AL_SQL1')
             sql_2 = pc_config.get('SQL', 'AL_SQL2')
+
         except Exception as e:
             logger_main.error(f"[AL] 讀取 SQL 檔案錯誤 {e}")
             errorHandler.exceptionWriter(f"[AL] 讀取 SQL 檔案錯誤 {e}")
@@ -205,18 +206,21 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
             logger_main.error("[AL-Create Table] Run Sql Execution failed")
             exit(1)
         
-        try:
-            insert_table = SqlExecutionImpl(main_config, fc_config, fc_args, sql_2)
-        except Exception as e:
-            logger_main.error(f"[AL-Insert Table] 建立SqlExecutionImpl錯誤 {e}")
-            errorHandler.exceptionWriter(f"[AL-Insert Table] 建立SqlExecutionImpl錯誤 {e}")
-            exit(1)
-        result = insert_table.run()
-        if result == True:
-            logger_main.info("[AL-Insert Table] Run Sql Execution success")
-        elif result == False:
-            logger_main.error("[AL-Insert Table] Run Sql Execution failed")
-            exit(1)
+        if sql_2 == "":
+            logger_main.info("[AL-Insert Table] 沒有第二個 SQL 檔案跳過執行")
+        else:
+            try:
+                insert_table = SqlExecutionImpl(main_config, fc_config, fc_args, sql_2)
+            except Exception as e:
+                logger_main.error(f"[AL-Insert Table] 建立SqlExecutionImpl錯誤 {e}")
+                errorHandler.exceptionWriter(f"[AL-Insert Table] 建立SqlExecutionImpl錯誤 {e}")
+                exit(1)
+            result = insert_table.run()
+            if result == True:
+                logger_main.info("[AL-Insert Table] Run Sql Execution success")
+            elif result == False:
+                logger_main.error("[AL-Insert Table] Run Sql Execution failed")
+                exit(1)
         
         logger_main.info("[AL-Airbyte] Run Airbyte and Load Date to Hive Table success")
         exit(0)
