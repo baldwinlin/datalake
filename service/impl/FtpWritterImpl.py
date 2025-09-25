@@ -51,11 +51,14 @@ class FtpWritterImpl(FtpWritter):
         self.errorHandler = None
         self.args_dict = json.loads(self.args_str)
         self.log_level = main_config["LOG"].get("LOG_LEVEL", "INFO").upper()
-        self.limit_cnt = 1000000
 
+
+        #Get temp path
         try:
             temp_path = self.main_config.get('LOG','TEMP_PATH')
             self.temp_path = Path(temp_path) / "fw"
+            if not self.temp_path.exists():
+                self.temp_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             raise Exception(f"[讀取TEMP path錯誤] {e}")
 
@@ -85,6 +88,45 @@ class FtpWritterImpl(FtpWritter):
                 self.db_sec = get_gpg_decrypt(self.db_sec_str, self.db_salt)
             except Exception as e:
                 raise Exception(f"[讀取DB config錯誤] {e}")
+            self.work_sub_dir = pc_config.get('SOURCE', 'WORK_SUB_DIR', fallback=None)
+        elif (self.source_type.lower() == 'dbfile'):
+            try:
+                self.host = self.fc_config.get('DB', 'HOST')
+                self.port = self.fc_config.get('DB', 'PORT')
+                self.db_sec_file = self.fc_config.get('DB', 'SEC_FILE')
+                self.db_key_file = self.fc_config.get('DB', 'KEY_FILE')
+                self.db_name = self.fc_config.get('DB', 'DB_NAME')
+                #self.table_name = self.fc_config.get('DB', 'TABLE_NAME')
+                self.driver = self.fc_config.get('DB', 'DRIVER')
+                self.db_user, self.db_sec_str = readSecFile(self.db_sec_file)
+                self.db_salt = readSaltFile(self.db_key_file)
+                # self.db_sec = aes256Decrypt(self.sec_str, bytes.fromhex(self.salt))
+                self.db_sec = get_gpg_decrypt(self.db_sec_str, self.db_salt)
+            except Exception as e:
+                raise Exception(f"[讀取DB config錯誤] {e}")
+
+            try:
+                self.s3_host = fc_config.get('S3', 'HOST')
+                self.s3_port = fc_config.get('S3', 'PORT')
+                self.s3_sec_file = fc_config.get('S3', 'ASSESS_ID_FILE')
+                self.s3_key_file = fc_config.get('S3', 'ASSESS_KEY_FILE')
+                self.s3_user, self.s3_sec_str = readSecFile(self.s3_sec_file)
+                self.s3_salt = readSaltFile(self.s3_key_file)
+                self.s3_sec = get_gpg_decrypt(self.s3_sec_str, self.s3_salt)
+            except Exception as e:
+                raise Exception(f"[讀取S3 config錯誤] {e}")
+            self.src_path = pc_config.get('SOURCE', 'PATH', fallback=None)
+            self.src_bucket = pc_config.get('SOURCE', 'BUCKET', fallback=None)
+            self.src_delimiter = pc_config.get('SOURCE', 'DELIMITER', fallback=None)
+            if self.src_delimiter:
+                self.src_delimiter = self.getCorrectDelimiter(self.src_delimiter)
+            self.src_encoding = pc_config.get('SOURCE', 'ENCODING', fallback='utf-8')
+            self.src_name_pattern = pc_config.get('SOURCE', 'NAME_PATTERN', fallback=None)
+            self.src_db_name = pc_config.get('SOURCE', 'DB_NAME', fallback=None)
+            self.src_table_name = pc_config.get('SOURCE', 'TABLE_NAME', fallback=None)
+            self.work_sub_dir = pc_config.get('SOURCE', 'WORK_SUB_DIR', fallback=None)
+
+
         elif (self.source_type.lower() == 's3'):
             try:
                 self.s3_host = fc_config.get('S3', 'HOST')
@@ -100,8 +142,17 @@ class FtpWritterImpl(FtpWritter):
             self.src_bucket = pc_config.get('SOURCE', 'BUCKET', fallback=None)
             self.src_encoding = pc_config.get('SOURCE', 'ENCODING', fallback='utf-8')
             self.src_name_pattern = pc_config.get('SOURCE', 'NAME_PATTERN', fallback=None)
+            self.work_sub_dir = pc_config.get('SOURCE', 'WORK_SUB_DIR', fallback='')
         else:
             raise Exception(f"[Source type {self.source_type} 未定義]")
+
+        #Get work path
+        if self.work_sub_dir:
+            self.work_path = self.temp_path / self.work_sub_dir
+        else:
+            self.work_path = self.temp_path
+        if not self.work_path.exists():
+            self.work_path.mkdir(parents=True, exist_ok=True)
 
         #確認資料目的 FTP or S3
         self.target_type = pc_config.get('TARGET', 'TYPE', fallback=None)
@@ -305,8 +356,8 @@ class FtpWritterImpl(FtpWritter):
         sign_str = ""
         if value is None:
             value_str = ""
-        elif dtype in ('num', 'float') and value < 0:
-            value_str = str(-value)
+        elif dtype == 'num' and int(value) < 0:
+            value_str = str(-int(value))
             sign_str = "-"
         else:
             value_str = str(value)
@@ -472,11 +523,105 @@ class FtpWritterImpl(FtpWritter):
                 f.write(ctl_text)
         return out_file, ctl_file
 
-    def getS3Files(self):
-        search_key = self.src_path + self.replaceArg(self.src_name_pattern)
+    def getColMata(self):
+        with open(self.tg_col_size_file, "r", encoding="utf-8") as f:
+            fields_lens = [int(line.strip()) for line in f if line.strip()]
+
+
+        sql = f'select * from {self.src_db_name}.{self.src_table_name} LIMIT 1'
+        try:
+            dao = self.connectDb()
+        except Exception as e:
+            self.errorExit(f'[資料庫連線失敗] {e}')
+
+        try:
+            cursor = dao.conn.cursor()
+            cursor.execute(sql)
+            self.logger.debug(f'[SQL] {sql}')
+        except Exception as e:
+            self.errorExit(f"[執行SQL失敗] {e}")
+
+        # 欄位資訊
+        col_info = cursor.description  # (name, type_code, display_size, internal_size, precision, scale, null_ok)
+        def detectDtype(db_type):
+            if 'CHAR' in db_type:
+                return 'str'
+            elif 'INTEGER' in db_type:
+                return 'num'
+            # elif 'FLOAT' in db_type:
+            #     return 'float'
+            # elif 'DECIMAL' in db_type:
+            #     return 'float'
+            else:
+                return 'str'
+
+        col_meta = []
+        for i, col in enumerate(col_info):
+            col_name = col[0]
+            col_length = fields_lens[i]
+            dtype = detectDtype(str(col[1]))
+            self.logger.debug("[{}] {}".format(col_name, str(col[1])))
+            col_meta.append((col_name, col_length, dtype))
+
+        return col_meta
+
+
+    def processDbFile(self, db_files):
+        out_file_path = self.work_path / self.replaceArg(self.tg_name_pattern)
+        out_file = None
+        try:
+            if (self.tg_delimiter):
+                out_file = open(out_file_path, "w", encoding=self.tg_encoding, errors="replace", newline="")
+            else:
+                out_file = open(out_file_path, "wb")
+                col_meta = self.getColMata()
+        except Exception as e:
+            self.errorExit(f"[開檔{out_file_path}失敗] {e}")
+
+
+        process_cnt = 0
+        for file in db_files:
+            with open(file, 'r', encoding=self.src_encoding) as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        row = line.strip().split(self.src_delimiter)
+                        process_cnt += 1
+                    else:
+                        continue
+
+                    if self.tg_delimiter:
+                        output = self.tg_delimiter.join(str(v) if v is not None else "" for v in row) + self.tg_new_line_character
+                        out_file.write(output)
+                    else:
+                        line_bytes = b""
+                        for idx, (col_name, col_length, dtype) in enumerate(col_meta):
+                            line_bytes += self.formatField(row[idx], col_length, dtype, self.tg_encoding)
+                        out_file.write(line_bytes + self.tg_new_line_character.encode(self.tg_encoding))
+
+        #Create control file
+        ctl_file = None
+        if(self.tg_ctl_file.lower() == 'y'):
+            ctl_file = self.work_path / self.replaceArg(self.tg_ctl_file_name_pattern)
+            batch_date = self.getKeyValue(self.args_dict, "batch_date")
+            if not batch_date:
+                batch_date = datetime.today().strftime("%Y%m%d")
+            with open(ctl_file, "w", encoding=self.tg_encoding, errors="replace") as f:
+                ctl_text = '***{}{}{:09d}{:09d}{}{}'.format(self.replaceArg(self.tg_name_pattern),
+                                                            batch_date, process_cnt, process_cnt,
+                                                            self.tg_ctl_chinese, batch_date)
+                f.write(ctl_text)
+
+        if out_file:
+            out_file.close()
+
+        return out_file_path, ctl_file
+
+    def downloadS3Files(self, src_bucket, download_path, search_key):
+
         self.logger.debug(f'[Search S3 file with key {search_key}]')
         try:
-            s3SrcDao = S3DaoImpl(self.src_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
+            s3SrcDao = S3DaoImpl(src_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
         except Exception as e:
             self.errorExit(f'[S3連線失敗] {e}')
 
@@ -485,17 +630,16 @@ class FtpWritterImpl(FtpWritter):
 
         download_files = []
         for file in filelist:
-            remote_path = self.temp_path / Path(file).name
+            remote_path = download_path / Path(file).name
             self.logger.debug(f"[Download file] {file} -> {remote_path}")
             download_files.append(remote_path)
             try:
                 s3SrcDao.downloadFile(file, remote_path)
             except Exception as e:
                 self.errorExit(f"[S3下載失敗]")
-            line_cnt = self.convertEncoding(remote_path, self.tg_encoding, self.src_encoding)
-            self.logger.info(f'[檔案筆數] {remote_path} : {line_cnt}')
 
         return download_files
+
 
     def convertEncoding(self, file_path: str, target_encoding: str, source_encoding: str = "utf-8"):
         """
@@ -518,7 +662,9 @@ class FtpWritterImpl(FtpWritter):
                 for line in src:
                     if (target_encoding != source_encoding):
                         tmp_file.write(line)
-                    line_cnt += 1
+                    line = line.strip()
+                    if line:
+                        line_cnt += 1
         except Exception as e:
             self.errorExit(f"[檔案轉碼失敗] {e}")
 
@@ -539,7 +685,7 @@ class FtpWritterImpl(FtpWritter):
                 ftpDao.uploadFile(upload_file, self.tg_path)
                 self.logger.info(f"[上傳檔案至FTP成功] {upload_file}")
             except Exception as e:
-                self.errorExit(f"[FTP上傳失敗] {e}")
+                self.errorExit(f"[FTP上傳失敗 {upload_file}] {e}")
         elif (self.tg_type.lower() == 's3'):
             try:
                 target_path = self.tg_path + Path(upload_file).name
@@ -576,7 +722,6 @@ class FtpWritterImpl(FtpWritter):
                 # 處理刪除檔案時可能發生的錯誤，例如權限問題
                 self.logger.debug(f"錯誤: 無法刪除檔案 {file_path} - {e}")
 
-        self.logger.debug(f"\刪除完成，共成功刪除 {deleted_count} 個檔案。")
 
     def errorExit(self, error_message, error_traceback = ''):
         self.logger.error(error_message)
@@ -588,6 +733,7 @@ class FtpWritterImpl(FtpWritter):
     def run(self):
         self.logger.setLevel(getattr(logging, self.log_level, logging.INFO))
         self.logger.info("[Run FTP writter]")
+        download_files = []
         filelist = []
         upload_file = None
         if(self.source_type.lower() == "db"):
@@ -596,9 +742,22 @@ class FtpWritterImpl(FtpWritter):
             filelist.append(str(out_file))
             if(ctl_file):
                 filelist.append(str(ctl_file))
+        elif self.source_type.lower() == "dbfile":
+            search_key = self.src_path + '*'
+            download_files = self.downloadS3Files(self.src_bucket, self.work_path, search_key)
+            out_file, ctl_file = self.processDbFile(download_files)
+            print(out_file, ctl_file)
+            filelist.append(str(out_file))
+            if (ctl_file):
+                filelist.append(str(ctl_file))
+
         elif(self.source_type.lower() == "s3"):
+            search_key = self.src_path + self.replaceArg(self.src_name_pattern)
             out_file = self.temp_path / self.replaceArg(self.tg_name_pattern)
-            filelist = self.getS3Files()
+            filelist = self.downloadS3Files(self.src_bucket, self.work_path, search_key)
+            for file in filelist:
+                line_cnt = self.convertEncoding(file, self.tg_encoding, self.src_encoding)
+                self.logger.info(f'[檔案筆數] {file} : {line_cnt}')
         else:
             self.errorExit(f"[Source type未定義]")
 
@@ -616,9 +775,12 @@ class FtpWritterImpl(FtpWritter):
             filelist.append(out_zip_file)
         else:
             for upload_file in filelist:
+                print("upload_file: ", upload_file)
                 self.uploadFile(upload_file)
 
         #Delete process files
+        if download_files:
+            self.deleteFiles(download_files)
         self.deleteFiles(filelist)
 
 

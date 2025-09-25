@@ -143,20 +143,23 @@ class S3DaoImpl(FileDao):
         pass
 
 if __name__ == "__main__":
-    # s3 = boto3.client(
-    #     "s3",
-    #     endpoint_url="http://localhost:4566",  # LocalStack
-    #     aws_access_key_id="test",
-    #     aws_secret_access_key="test",
-    #     region_name="us-east-1"
-    # )
-    # s3.create_bucket(Bucket="my-bucket-123456")
+    s3 = boto3.client(
+        "s3",
+        endpoint_url="http://localhost:4566",  # LocalStack
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+        region_name="us-east-1"
+    )
+    s3.create_bucket(Bucket="my-bucket-123456")
     # print(s3.list_buckets())
     # # exit()
 
     s3Dao = S3DaoImpl("my-bucket-123456", "localhost", 4566, "test", "test")
-    # s3Dao.uploadFile("C:\\Users\\Baldwin\\PycharmProjects\\dataLake\\temp\\test.txt", "datalake/test.txt")
-    files = s3Dao.listFiles("dataLake/uploads/aaaUTF\d*_20250901\.txt")
+    s3Dao.uploadFile("C:\\Users\\Baldwin\\PycharmProjects\\dataLake\\temp\\aa0000000000001",
+                     "myjdbc.db/employee/aa0000000000001")
+    s3Dao.uploadFile("C:\\Users\\Baldwin\\PycharmProjects\\dataLake\\temp\\aa0000000000002",
+                     "myjdbc.db/employee/aa0000000000002")
+    files = s3Dao.listFiles("myjdbc.db/employee/*")
     print(f"files: {files}")
 
     # delete_files = files[:3]
