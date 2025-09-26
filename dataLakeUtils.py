@@ -109,7 +109,7 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
     elif(fun == 'AIB'):
         logger_main.info("Run Airbyte Execution")
         try:
-            airbyte_execution = AirbyteExecutionImpl(main_config, fc_config, fc_args)
+            airbyte_execution = AirbyteExecutionImpl(main_config, fc_config, fc_args, pc_config)
         except Exception as e:
             logger_main.error(f"建立AirbyteExecutionImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"建立AirbyteExecutionImpl錯誤 {e}")
@@ -118,12 +118,6 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
         result = airbyte_execution.run()
         if result == True:
             logger_main.info("Run Airbyte Execution success")
-            #驗證S3是否為空
-            s3check_result = airbyte.validate_sync_result_s3()
-            if s3check_result == "S3_EMPTY":
-                logger_main.info("S3 檔案列表為空")
-            elif s3check_result == "S3_NOT_EMPTY":
-                logger_main.info("S3 檔案列表不為空")
             exit(0)
         elif result == False:
             logger_main.error("Run Airbyte Execution failed")
@@ -176,7 +170,7 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
         try:
             logger_main.info("[AL] 讀取 SQL 檔案")
             ddl_sql = pc_config.get('SQL', 'DDL_SQL')
-            sql_list_str = pc_config.get('SQL', 'AL_SQLS')
+            sql_list_str = pc_config.get('SQL', 'SQLS')
             sql_list = json.loads(sql_list_str)
 
         except Exception as e:
@@ -185,7 +179,7 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
             exit(1)
 
         try:
-            airbyte = AirbyteExecutionImpl(main_config, fc_config, fc_args)
+            airbyte = AirbyteExecutionImpl(main_config, fc_config, fc_args, pc_config)
         except Exception as e:
             logger_main.error(f"[AL-Airbyte] 建立AirbyteExecutionImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"[AL-Airbyte] 建立AirbyteExecutionImpl錯誤 {e}")
@@ -230,6 +224,7 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
                     logger_main.error(f"[AL-SQLS] 建立SqlExecutionImpl錯誤 {e}")
                     errorHandler.exceptionWriter(f"[AL-SQLS] 建立SqlExecutionImpl錯誤 {e}")
                     exit(1)
+
                 result = sql_execution.run()
                 if result == True:
                     logger_main.info("[AL-SQLS] [{}] Run Sql Execution success".format(idx+1))
