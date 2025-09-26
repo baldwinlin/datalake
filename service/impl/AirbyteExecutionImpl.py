@@ -14,17 +14,15 @@ Modify          :
 '''
 from service.AirbyteExecution import *
 from crypto.Aes256Crypto import *
+from dao.impl.S3DaoImpl import S3DaoImpl
+from logger import Logger
 
 
 import logging
-from logger import Logger
-# from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
-
 import time
 import requests
 import json
 import datetime
-
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -33,24 +31,46 @@ class AirbyteExecutionImpl(AirbyteExecution):
     def __init__(self, main_config, config, args):
         # config 是從 airbyte.conf 來的配置
         self.config = config
-        self.workspace_ids = config['AIRBYTE']['WORKSPACE_IDS']
-        self.airbyte_root_api = config['AIRBYTE']['AIRBYTE_ROOT_API']
-        
-        #測試環境 正式執行時需要註解掉
-        # self.user = config['AIRBYTE']['CLIENT_ID']
-        # self.db_sec = config['AIRBYTE']['CLIENT_SECRET']
 
-        self.sec_file = self.config.get('AIRBYTE','SEC_FILE')
-        self.key_file = self.config.get('AIRBYTE','KEY_FILE')
-        #正式環境 正式執行需解開註解
-        self.user, self.sec_str = readSecFile(self.sec_file)
-        self.salt = readSaltFile(self.key_file)
-        self.db_sec = get_gpg_decrypt(self.sec_str, self.salt)
+        #airbyte config
+        try:
+            self.workspace_ids = config['AIRBYTE']['WORKSPACE_IDS']
+            self.airbyte_root_api = config['AIRBYTE']['AIRBYTE_ROOT_API']
+            #測試環境 正式執行時需要註解掉
+            # self.user = config['AIRBYTE']['CLIENT_ID']
+            # self.db_sec = config['AIRBYTE']['CLIENT_SECRET']
+            #正式環境 正式執行需解開註解
+            self.sec_file = self.config.get('AIRBYTE','SEC_FILE')
+            self.key_file = self.config.get('AIRBYTE','KEY_FILE')
+            self.user, self.sec_str = readSecFile(self.sec_file)
+            self.salt = readSaltFile(self.key_file)
+            self.db_sec = get_gpg_decrypt(self.sec_str, self.salt)
+        except Exception as e:
+            raise Exception(f"讀取Airbyte config錯誤: {e}")
+
+        #s3 config
+        try:
+            self.s3_host = self.config.get('S3','HOST')
+            self.s3_port = self.config.get('S3','PORT')
+            self.s3_assess_id_file = self.config.get('S3','ASSESS_ID_FILE')
+            self.s3_assess_key_file = self.config.get('S3','ASSESS_KEY_FILE')
+            self.s3_user, self.s3_sec_str = readSecFile(self.s3_assess_id_file)
+            self.s3_salt = readSaltFile(self.s3_assess_key_file)
+            self.s3_sec = get_gpg_decrypt(self.s3_sec_str, self.s3_salt)
+            self.bucket = self.config.get('S3','BUCKET')
+            self.s3_path = self.config.get('S3','S3_PATH')
+        except Exception as e:
+            raise Exception(f"讀取S3 config錯誤: {e}")
+
+        #s3 dao connect
+        try:
+            self.s3Dao=S3DaoImpl(self.bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
+        except Exception as e:
+            raise Exception(f"建立S3 DAO時發生錯誤: {e}")
 
 
         args = json.loads(args)
         self.connection_name = str(args["connection_name"])
-
         self.poll_sec = int(args.get("poll_sec", 180))
         self.timeout_sec = int(args.get("timeout_sec", 3600))
 
@@ -61,7 +81,6 @@ class AirbyteExecutionImpl(AirbyteExecution):
         self.source_name = None
         self.destination_name = None
         self.job_id = None
-
 
         # 初始化 logger 變數
         self.main_config = main_config
@@ -427,3 +446,18 @@ class AirbyteExecutionImpl(AirbyteExecution):
         
         result_data = response.json()
         self.logger_main.info(f"完整 Job Response: {json.dumps(result_data, indent=2)}")
+
+    def validate_sync_result_s3(self):
+        self.logger_main.info(f"讀取 S3 檔案列表驗證同步結果")
+        try:
+            target_path = str(self.s3_path + "/" + "*")
+            self.logger_main.info(f"欲查詢的檔案路徑與名稱模式: {target_path}")
+            file_objs_list = self.s3Dao.listFiles(target_path)
+            if len(file_objs_list) == 0:
+                self.logger_main.info(f"S3 檔案列表為空")
+                return "S3_EMPTY"
+            else:
+                self.logger_main.info(f"S3 檔案列表: {file_objs_list}")
+                return "S3_NOT_EMPTY"
+        except Exception as e:
+            raise Exception(f"取得S3檔案列表失敗: {e}")
