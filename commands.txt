@@ -26,6 +26,7 @@ python3.10 /hadoop/application/python_utility_test/dataLakeUtils.py --fun AIC --
 
 
 python dbCompare2.py --mc ./conf/main.conf  --fun data --dc ./conf/db_compare.conf --args '{"sample_cnt":"5"}' 
+python dbCompare2.py --mc ./conf/main.conf --fun data --dc ./conf/db_compare.conf --args '{"src_db_name":"hadp_out_stg", "compare_table":"ftp_writer_test", "tg_db_name":"hadp_out_stg", "compare_date": "20250925", "sample_cnt":"5"}'
 
 
 python dataLakeUtils.py --fun AL --mc "./conf/main.conf" --fc "./conf/AL_connect.conf" --pc "./conf/AL_pc.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800, "batch_date":"20250918"}'

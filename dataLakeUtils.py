@@ -20,10 +20,6 @@ Output          :
 ********************************************************************************
 Modify          :
 '''
-import os
-import json
-import configparser
-import argparse
 from service.impl.FtpLoaderImpl import *
 from service.impl.FtpWritterImpl import *
 from service.impl.SqlExecutionImpl  import *
@@ -34,15 +30,16 @@ from service.impl.UploadCheckImpl import *
 from service.impl.HouseKeepingImpl import *
 from util.CleanTempFIle import *
 
-
-from service.FtpLoader import FtpLoader
-
-import logging
 from logger import Logger
 from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
-
-
 from crypto.Aes256Crypto import *
+
+import logging
+import os
+import json
+import configparser
+import argparse
+
 
 def readConfig(config_file):
     pass
@@ -121,6 +118,12 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
         result = airbyte_execution.run()
         if result == True:
             logger_main.info("Run Airbyte Execution success")
+            #驗證S3是否為空
+            s3check_result = airbyte.validate_sync_result_s3()
+            if s3check_result == "S3_EMPTY":
+                logger_main.info("S3 檔案列表為空")
+            elif s3check_result == "S3_NOT_EMPTY":
+                logger_main.info("S3 檔案列表不為空")
             exit(0)
         elif result == False:
             logger_main.error("Run Airbyte Execution failed")
@@ -172,8 +175,9 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
 
         try:
             logger_main.info("[AL] 讀取 SQL 檔案")
-            sql_1 = pc_config.get('SQL', 'AL_SQL1')
-            sql_2 = pc_config.get('SQL', 'AL_SQL2')
+            ddl_sql = pc_config.get('SQL', 'DDL_SQL')
+            sql_list_str = pc_config.get('SQL', 'AL_SQLS')
+            sql_list = json.loads(sql_list_str)
 
         except Exception as e:
             logger_main.error(f"[AL] 讀取 SQL 檔案錯誤 {e}")
@@ -186,43 +190,57 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
             logger_main.error(f"[AL-Airbyte] 建立AirbyteExecutionImpl錯誤 {e}")
             errorHandler.exceptionWriter(f"[AL-Airbyte] 建立AirbyteExecutionImpl錯誤 {e}")
             exit(1)
+
         result = airbyte.run()
         if result == True:
+            SQLS_mode = False
             logger_main.info("[AL-Airbyte] Run Airbyte Execution success")
+            s3check_result = airbyte.validate_sync_result_s3()
+            if s3check_result == "S3_EMPTY":
+                logger_main.info("[AL-Airbyte] S3 檔案列表為空")
+                SQLS_mode = False
+            elif s3check_result == "S3_NOT_EMPTY":
+                logger_main.info("[AL-Airbyte] S3 檔案列表不為空")
+                SQLS_mode = True
         elif result == False:
             logger_main.error("[AL-Airbyte] Run Airbyte Execution failed")
             exit(1)
 
+
         try:
-            create_table = SqlExecutionImpl(main_config, fc_config, fc_args, sql_1)
+            DDL_SQL = SqlExecutionImpl(main_config, fc_config, fc_args, ddl_sql)
         except Exception as e:
-            logger_main.error(f"[AL-Create Table] 建立SqlExecutionImpl錯誤 {e}")
-            errorHandler.exceptionWriter(f"[AL-Create Table] 建立SqlExecutionImpl錯誤 {e}")
+            logger_main.error(f"[AL-DDL SQL] 建立SqlExecutionImpl錯誤 {e}")
+            errorHandler.exceptionWriter(f"[AL-DDL SQL] 建立SqlExecutionImpl錯誤 {e}")
             exit(1)
-        result = create_table.run()
+        result = DDL_SQL.run()
         if result == True:
-            logger_main.info("[AL-Create Table] Run Sql Execution success")
+            logger_main.info("[AL-DDL SQL] Run Sql Execution success")
         elif result == False:
-            logger_main.error("[AL-Create Table] Run Sql Execution failed")
+            logger_main.error("[AL-DDL SQL] Run Sql Execution failed")
             exit(1)
         
-        if sql_2 == "":
-            logger_main.info("[AL-Insert Table] 沒有第二個 SQL 檔案跳過執行")
-        else:
-            try:
-                insert_table = SqlExecutionImpl(main_config, fc_config, fc_args, sql_2)
-            except Exception as e:
-                logger_main.error(f"[AL-Insert Table] 建立SqlExecutionImpl錯誤 {e}")
-                errorHandler.exceptionWriter(f"[AL-Insert Table] 建立SqlExecutionImpl錯誤 {e}")
-                exit(1)
-            result = insert_table.run()
-            if result == True:
-                logger_main.info("[AL-Insert Table] Run Sql Execution success")
-            elif result == False:
-                logger_main.error("[AL-Insert Table] Run Sql Execution failed")
-                exit(1)
-        
-        logger_main.info("[AL-Airbyte] Run Airbyte and Load Date to Hive Table success")
+
+        if SQLS_mode == True:
+            logger_main.info("[AL-SQLS] 執行 SQLS 所有 SQL 檔案")
+            for idx, sql in enumerate(sql_list):
+                try:
+                    sql_execution = SqlExecutionImpl(main_config, fc_config, fc_args, sql)
+                except Exception as e:
+                    logger_main.error(f"[AL-SQLS] 建立SqlExecutionImpl錯誤 {e}")
+                    errorHandler.exceptionWriter(f"[AL-SQLS] 建立SqlExecutionImpl錯誤 {e}")
+                    exit(1)
+                result = sql_execution.run()
+                if result == True:
+                    logger_main.info("[AL-SQLS] [{}] Run Sql Execution success".format(idx+1))
+                elif result == False:
+                    logger_main.error("[AL-SQLS] [{}] Run Sql Execution failed".format(idx+1))
+                    exit(1)
+            logger_main.info("[AL-SQLS] 執行 SQLS 所有 SQL 檔案完成")
+        elif SQLS_mode == False:
+            logger_main.info("[AL-SQLS] Airbyte 的S3沒有新的檔案 ，不用執行 SQLS")
+
+        logger_main.info("[AL] Run Airbyte and Load Date to Hive Table success")
         exit(0)
         
     else:
