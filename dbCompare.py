@@ -204,7 +204,8 @@ class DbCompare():
             with self.src_conn.cursor() as cursor:
                 cursor.execute(f'show partitions {table_name}')
                 rows = cursor.fetchall()
-                partition_names = [row[0] for row in rows].sort(reverse=True)
+                partition_names = [row[0] for row in rows]
+                partition_names.sort(reverse=True)
 
         # 得到欄位名稱
         with self.src_conn.cursor() as cursor:
