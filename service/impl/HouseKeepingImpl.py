@@ -80,7 +80,6 @@ class HouseKeepingImpl(Housekeeping):
         #cleanup config
         try:
             self.cleanup_type = self.pc_config.get('CLEANUP','TYPE')
-            print(self.cleanup_type)
             if self.cleanup_type.lower() == "s3":
                 self.bucket = self.pc_config.get('CLEANUP','BUCKET')
                 self.s3_path = self.pc_config.get('CLEANUP','S3_PATH')

@@ -454,7 +454,7 @@ class AirbyteExecutionImpl(AirbyteExecution):
     def validate_sync_result_s3(self):
         self.logger_main.info(f"讀取 S3 檔案列表驗證同步結果")
         try:
-            target_path = str(self.s3_path + "/" + "*.*")
+            target_path = str(self.s3_path + "/" + "*")
             self.logger_main.info(f"欲查詢的檔案路徑與名稱模式: {target_path}")
             file_objs_list = self.s3Dao.listFiles(target_path)
             if len(file_objs_list) <= 1:
