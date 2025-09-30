@@ -49,7 +49,9 @@ class FtpWritterImpl(FtpWritter):
         self.sql_file = sql_file
         self.logger_main = None
         self.errorHandler = None
-        self.args_dict = json.loads(self.args_str)
+        self.args_dict = None
+        if self.args_str:
+            self.args_dict = json.loads(self.args_str)
         self.log_level = main_config["LOG"].get("LOG_LEVEL", "INFO").upper()
 
 
@@ -626,18 +628,20 @@ class FtpWritterImpl(FtpWritter):
             self.errorExit(f'[S3連線失敗] {e}')
 
         filelist = s3SrcDao.listFiles(search_key)
-        self.logger.debug(f'[Source file list ] {filelist}')
+        #self.logger.debug(f'[Source file list ] {filelist}')
 
+        cnt = 0
         download_files = []
         for file in filelist:
             remote_path = download_path / Path(file).name
-            self.logger.debug(f"[Download file] {file} -> {remote_path}")
+            #self.logger.debug(f"[Download file] {file} -> {remote_path}")
             download_files.append(str(remote_path))
             try:
                 s3SrcDao.downloadFile(file, remote_path)
+                cnt += 1
             except Exception as e:
                 self.errorExit(f"[S3下載失敗]")
-
+        self.logger.debug((f'Download {cnt} files'))
         return download_files
 
 
@@ -714,14 +718,14 @@ class FtpWritterImpl(FtpWritter):
                 if os.path.exists(file_path):
                     # 刪除檔案
                     os.remove(file_path)
-                    self.logger.debug(f"成功刪除檔案: {file_path}")
+                    #self.logger.debug(f"成功刪除檔案: {file_path}")
                     deleted_count += 1
                 else:
                     self.logger.debug(f"警告: 檔案不存在，無法刪除: {file_path}")
             except OSError as e:
                 # 處理刪除檔案時可能發生的錯誤，例如權限問題
                 self.logger.debug(f"錯誤: 無法刪除檔案 {file_path} - {e}")
-
+        return deleted_count
 
     def errorExit(self, error_message, error_traceback = ''):
         self.logger.error(error_message)
@@ -775,13 +779,15 @@ class FtpWritterImpl(FtpWritter):
             filelist.append(out_zip_file)
         else:
             for upload_file in filelist:
-                print("upload_file: ", upload_file)
+                self.logger.debug(f'[Upload file] {upload_file}')
                 self.uploadFile(upload_file)
 
         #Delete process files
         if download_files:
-            self.deleteFiles(download_files)
-        self.deleteFiles(filelist)
+            n = self.deleteFiles(download_files)
+            self.logger.debug(f'[Delete download files: {n}]')
+        n = self.deleteFiles(filelist)
+        self.logger.debug(f'[Delete working files: {n}]')
 
 
 
