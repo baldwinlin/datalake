@@ -356,16 +356,15 @@ class FtpWritterImpl(FtpWritter):
     def formatField(self, value, length, dtype="str", encoding="utf-8"):
         """格式化欄位為固定長度 (byte)。"""
         sign_str = ""
+        value_str = str(value)
         if value is None or value == '':
             value_str = ""
-        elif dtype == 'num' and int(value) < 0:
-            value_str = str(-int(value))
+        elif dtype == 'num' and value_str.startswith('-'):
+            value_str = value_str[1:]
             sign_str = "-"
-        elif dtype == 'float' and float(value) < 0:
-            value_str = str(-float(value))
+        elif dtype == 'float' and value_str.startswith('-'):
+            value_str = value_str[1:]
             sign_str = "-"
-        else:
-            value_str = str(value)
 
         raw_bytes = value_str.encode(encoding, errors="replace")
 
@@ -384,7 +383,7 @@ class FtpWritterImpl(FtpWritter):
                 if sign_str:
                     raw_bytes = b"-" + pad_byte * (pad_len - 1) + raw_bytes
                 else:
-                    raw_bytes = raw_bytes + pad_byte * pad_len
+                    raw_bytes = pad_byte * pad_len + raw_bytes
             else:  # str
                 pad_byte = " ".encode(encoding)
                 raw_bytes = raw_bytes + pad_byte * pad_len
