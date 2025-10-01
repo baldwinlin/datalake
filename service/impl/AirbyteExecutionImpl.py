@@ -456,8 +456,8 @@ class AirbyteExecutionImpl(AirbyteExecution):
         try:
             target_path = str(self.s3_path + "/" + "*")
             self.logger_main.info(f"欲查詢的檔案路徑與名稱模式: {target_path}")
-            file_objs_list = self.s3Dao.listFiles(target_path)
-            if len(file_objs_list) <= 1:
+            file_objs_list = self.s3Dao.listFilesWithoutFolder(target_path)
+            if len(file_objs_list) == 0:
                 self.logger_main.info(f"S3 檔案列表為空")
                 return "S3_EMPTY"
             else:

@@ -200,43 +200,46 @@ def run(fun, main_config, fc_config, pc_config, fc_args, sql_file):
             logger_main.error("[AL-Airbyte] Run Airbyte Execution failed")
             exit(1)
 
-
-        try:
-            DDL_SQL = SqlExecutionImpl(main_config, fc_config, fc_args, ddl_sql)
-        except Exception as e:
-            logger_main.error(f"[AL-DDL SQL] 建立SqlExecutionImpl錯誤 {e}")
-            errorHandler.exceptionWriter(f"[AL-DDL SQL] 建立SqlExecutionImpl錯誤 {e}")
-            exit(1)
-        result = DDL_SQL.run()
-        if result == True:
-            logger_main.info("[AL-DDL SQL] Run Sql Execution success")
-        elif result == False:
-            logger_main.error("[AL-DDL SQL] Run Sql Execution failed")
-            exit(1)
+        if ddl_sql:
+            try:
+                DDL_SQL = SqlExecutionImpl(main_config, fc_config, fc_args, ddl_sql)
+            except Exception as e:
+                logger_main.error(f"[AL-DDL SQL] 建立SqlExecutionImpl錯誤 {e}")
+                errorHandler.exceptionWriter(f"[AL-DDL SQL] 建立SqlExecutionImpl錯誤 {e}")
+                exit(1)
+            result = DDL_SQL.run()
+            if result == True:
+                logger_main.info("[AL-DDL SQL] Run Sql Execution success")
+            elif result == False:
+                logger_main.error("[AL-DDL SQL] Run Sql Execution failed")
+                exit(1)
+        else:
+            logger_main.info("[AL-DDL SQL] DDL SQL 不存在，不執行後續流程")
+            exit(0)
         
 
-        if SQLS_mode == True:
-            logger_main.info("[AL-SQLS] 執行 SQLS 所有 SQL 檔案")
-            for idx, sql in enumerate(sql_list):
-                try:
-                    sql_execution = SqlExecutionImpl(main_config, fc_config, fc_args, sql)
-                except Exception as e:
-                    logger_main.error(f"[AL-SQLS] 建立SqlExecutionImpl錯誤 {e}")
-                    errorHandler.exceptionWriter(f"[AL-SQLS] 建立SqlExecutionImpl錯誤 {e}")
-                    exit(1)
+        if sql_list:
+            if SQLS_mode == True:    
+                for idx, sql in enumerate(sql_list):
+                    try:
+                        sql_execution = SqlExecutionImpl(main_config, fc_config, fc_args, sql)
+                    except Exception as e:
+                        logger_main.error(f"[AL-SQLS] 建立SqlExecutionImpl錯誤 {e}")
+                        errorHandler.exceptionWriter(f"[AL-SQLS] 建立SqlExecutionImpl錯誤 {e}")
+                        exit(1)
 
-                result = sql_execution.run()
-                if result == True:
-                    logger_main.info("[AL-SQLS] [{}] Run Sql Execution success".format(idx+1))
-                elif result == False:
-                    logger_main.error("[AL-SQLS] [{}] Run Sql Execution failed".format(idx+1))
-                    exit(1)
-            logger_main.info("[AL-SQLS] 執行 SQLS 所有 SQL 檔案完成")
-        elif SQLS_mode == False:
-            logger_main.info("[AL-SQLS] Airbyte 的S3沒有新的檔案 ，不用執行 SQLS")
+                    result = sql_execution.run()
+                    if result == True:
+                        logger_main.info("[AL-SQLS] [{}] Run Sql Execution success".format(idx+1))
+                    elif result == False:
+                        logger_main.error("[AL-SQLS] [{}] Run Sql Execution failed".format(idx+1))
+                        exit(1)
+                logger_main.info("[AL-SQLS] 執行 SQLS 所有 SQL 檔案完成")
+            elif SQLS_mode == False:
+                logger_main.info("[AL-SQLS] Airbyte 的S3沒有新的檔案 ，不用執行 SQLS")
 
-        logger_main.info("[AL] Run Airbyte and Load Date to Hive Table success")
-        exit(0)
+            logger_main.info("[AL] Run Airbyte and Load Date to Hive Table success")
+            exit(0)
         
     else:
         print("No such function")
