@@ -420,10 +420,10 @@ class FtpWritterImpl(FtpWritter):
                 return 'str'
             elif 'INTEGER' in db_type:
                 return 'num'
-            # elif 'FLOAT' in db_type:
-            #     return 'float'
-            # elif 'DECIMAL' in db_type:
-            #     return 'float'
+            elif 'FLOAT' in db_type:
+                return 'num'
+            elif 'DECIMAL' in db_type:
+                return 'num'
             else:
                 return 'str'
 
@@ -550,10 +550,10 @@ class FtpWritterImpl(FtpWritter):
                 return 'str'
             elif 'INTEGER' in db_type:
                 return 'num'
-            # elif 'FLOAT' in db_type:
-            #     return 'float'
-            # elif 'DECIMAL' in db_type:
-            #     return 'float'
+            elif 'FLOAT' in db_type:
+                return 'num'
+            elif 'DECIMAL' in db_type:
+                return 'num'
             else:
                 return 'str'
 
