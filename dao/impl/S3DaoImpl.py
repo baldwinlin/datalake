@@ -86,6 +86,23 @@ class S3DaoImpl(FileDao):
             return files
         except Exception as e:
             raise Exception(f"S3 列出檔案失敗: {e}")
+
+    def listFilesWithoutFolder(self, pattern: str) -> List[str]:
+        try:
+            paginator = self.s3.get_paginator('list_objects_v2')
+            page_iterator = paginator.paginate(Bucket=self.bucket)
+
+            files = []
+            for page in page_iterator:
+                for obj in page.get('Contents', []):
+                    key = obj['Key']
+                    if key.endswith('/'):
+                        continue
+                    if FilenameProcessor._match_name_pattern(key, pattern):
+                        files.append(key)
+            return files
+        except Exception as e:
+            raise Exception(f"S3 列出檔案失敗: {e}")
     
     def listFilesWithDate(self, pattern: str) -> List[str]:
         try:
