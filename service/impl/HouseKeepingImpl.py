@@ -164,9 +164,10 @@ class HouseKeepingImpl(Housekeeping):
       
     def GetS3FileList(self):
         try:
-            target_path = str(self.s3_path + "/" + self.file_pattern)
-            self.logger_main.info(f"欲查詢的檔案路徑與名稱模式: {target_path}")
-            file_objs_list = self.s3Dao.listFilesWithDate(target_path)
+            s3_prefix = str(self.s3_path)
+            search_key = str(self.s3_path + self.file_pattern)
+            self.logger_main.info(f"欲查詢的檔案路徑: {s3_prefix}, 檔案名稱模式: {search_key}")
+            file_objs_list = self.s3Dao.listFilesWithDate(search_key, s3_prefix)
             file_list = [file_obj[0] for file_obj in file_objs_list]
             file_date_list = [(file_obj[0], file_obj[1]) for file_obj in file_objs_list]
 

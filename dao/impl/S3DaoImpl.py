@@ -60,10 +60,10 @@ class S3DaoImpl(FileDao):
     def connect(self):
         pass
 
-    def listFiles(self, pattern: str) -> List[str]:
+    def listFiles(self, pattern: str, prefix: str) -> List[str]:
         try:
             paginator = self.s3.get_paginator('list_objects_v2')
-            page_iterator = paginator.paginate(Bucket=self.bucket)
+            page_iterator = paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter='/')
 
             files = []
             for page in page_iterator:
@@ -71,53 +71,39 @@ class S3DaoImpl(FileDao):
                     key = obj['Key']
                     if FilenameProcessor._match_name_pattern(key, pattern):
                         files.append(key)
-                    # if fnmatch.fnmatch(key, pattern):
-                    #     files.append(key)
-
-                    # REGEX_HINTS = ("^", "$", r"\d", r"\w", r"\s", "(", ")", "|", "{", "}")
-                    # if any(h in pattern for h in REGEX_HINTS):
-                    #     try:
-                    #         if re.fullmatch(pattern, key) is not None:
-                    #             files.append(key)
-                    #     except re.error as e:
-                    #         raise Exception(
-                    #             f"檢查檔案名稱樣式失敗：疑似正規表示式不合法（{e}）。請統一使用 glob 或合法 regex。"
-                    #         )
             return files
         except Exception as e:
             raise Exception(f"S3 列出檔案失敗: {e}")
 
-    def listFilesWithoutFolder(self, pattern: str) -> List[str]:
-        try:
-            paginator = self.s3.get_paginator('list_objects_v2')
-            page_iterator = paginator.paginate(Bucket=self.bucket)
+    # def listFilesWithoutFolder(self, pattern: str) -> List[str]:
+    #     try:
+    #         paginator = self.s3.get_paginator('list_objects_v2')
+    #         page_iterator = paginator.paginate(Bucket=self.bucket)
 
-            files = []
-            for page in page_iterator:
-                for obj in page.get('Contents', []):
-                    key = obj['Key']
-                    if key.endswith('/'):
-                        continue
-                    if FilenameProcessor._match_name_pattern(key, pattern):
-                        files.append(key)
-            return files
-        except Exception as e:
-            raise Exception(f"S3 列出檔案失敗: {e}")
+    #         files = []
+    #         for page in page_iterator:
+    #             for obj in page.get('Contents', []):
+    #                 key = obj['Key']
+    #                 if key.endswith('/'):
+    #                     continue
+    #                 if FilenameProcessor._match_name_pattern(key, pattern):
+    #                     files.append(key)
+    #         return files
+    #     except Exception as e:
+    #         raise Exception(f"S3 列出檔案失敗: {e}")
     
-    def listFilesWithDate(self, pattern: str) -> List[str]:
+    def listFilesWithDate(self, pattern: str, prefix: str) -> List[str]:
         try:
             paginator = self.s3.get_paginator('list_objects_v2')
-            page_iterator = paginator.paginate(Bucket=self.bucket)
+            page_iterator = paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter='/')
 
             files = []
             for page in page_iterator:
                 for obj in page.get('Contents', []):
                     key = obj['Key']
-                    # print(f"key: {key}, LastModified: {obj['LastModified']}")
                     if FilenameProcessor._match_name_pattern(key, pattern):
                         date = obj['LastModified'].astimezone(ZoneInfo('Asia/Taipei')).date()
                         files.append((key, date))
-            print(f"files: {files}")
             return files
            
         except Exception as e:

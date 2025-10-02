@@ -24,6 +24,7 @@ Output          :
 Modify          :
 '''
 import logging
+from re import S
 from logger import Logger
 from exception.dataLakeUtilsErrorHandler import dataLakeUtilsErrorHandler
 from pathlib import Path
@@ -619,15 +620,15 @@ class FtpWritterImpl(FtpWritter):
 
         return out_file_path, ctl_file
 
-    def downloadS3Files(self, src_bucket, download_path, search_key):
+    def downloadS3Files(self, src_bucket, download_path, search_key, s3_prefix):
 
-        self.logger.debug(f'[Search S3 file with key {search_key}]')
+        self.logger.debug(f'[Search S3 file with key {search_key}, s3_prefix {s3_prefix}]')
         try:
             s3SrcDao = S3DaoImpl(src_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
         except Exception as e:
             self.errorExit(f'[S3連線失敗] {e}')
 
-        filelist = s3SrcDao.listFiles(search_key)
+        filelist = s3SrcDao.listFiles(search_key, s3_prefix)
         #self.logger.debug(f'[Source file list ] {filelist}')
 
         cnt = 0
@@ -748,7 +749,7 @@ class FtpWritterImpl(FtpWritter):
                 filelist.append(str(ctl_file))
         elif self.source_type.lower() == "dbfile":
             search_key = self.src_path + '*'
-            download_files = self.downloadS3Files(self.src_bucket, self.work_path, search_key)
+            download_files = self.downloadS3Files(self.src_bucket, self.work_path, search_key, s3_prefix=self.src_path)
             out_file, ctl_file = self.processDbFile(download_files)
             print(out_file, ctl_file)
             filelist.append(str(out_file))
@@ -758,7 +759,7 @@ class FtpWritterImpl(FtpWritter):
         elif(self.source_type.lower() == "s3"):
             search_key = self.src_path + self.replaceArg(self.src_name_pattern)
             out_file = self.temp_path / self.replaceArg(self.tg_name_pattern)
-            filelist = self.downloadS3Files(self.src_bucket, self.work_path, search_key)
+            filelist = self.downloadS3Files(self.src_bucket, self.work_path, search_key, s3_prefix=self.src_path)
             for file in filelist:
                 line_cnt = self.convertEncoding(file, self.tg_encoding, self.src_encoding)
                 self.logger.info(f'[檔案筆數] {file} : {line_cnt}')

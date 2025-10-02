@@ -454,9 +454,10 @@ class AirbyteExecutionImpl(AirbyteExecution):
     def validate_sync_result_s3(self):
         self.logger_main.info(f"讀取 S3 檔案列表驗證同步結果")
         try:
-            target_path = str(self.s3_path + "/" + "*")
-            self.logger_main.info(f"欲查詢的檔案路徑與名稱模式: {target_path}")
-            file_objs_list = self.s3Dao.listFilesWithoutFolder(target_path)
+            s3_prefix = str(self.s3_path)
+            search_key = str(self.s3_path + "*")
+            self.logger_main.info(f"欲查詢的檔案路徑: {s3_prefix}, 檔案名稱模式: {search_key}")
+            file_objs_list = self.s3Dao.listFiles(search_key, s3_prefix)
             if len(file_objs_list) == 0:
                 self.logger_main.info(f"S3 檔案列表為空")
                 return "S3_EMPTY"

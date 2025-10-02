@@ -471,7 +471,9 @@ class FtpLoaderImpl(FtpLoader):
         try:
             s3Dao = S3DaoImpl(self.s3_bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)
             s3Dao.uploadFile(file_path, s3_file_path)
-            uploaded_file = s3Dao.listFiles(f"*{file}")
+            s3_prefix = self.target_path
+            search_key = s3_file_path
+            uploaded_file = s3Dao.listFiles(search_key, s3_prefix)
         except Exception as e:
             raise Exception(f"上傳檔案 {file} 失敗: {e}")
             
