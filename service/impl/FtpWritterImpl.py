@@ -357,13 +357,15 @@ class FtpWritterImpl(FtpWritter):
     def formatField(self, value, length, dtype="str", encoding="utf-8"):
         """格式化欄位為固定長度 (byte)。"""
         sign_str = ""
-        if value is None:
+        value_str = str(value)
+        if value is None or value == '':
             value_str = ""
-        elif dtype == 'num' and int(value) < 0:
-            value_str = str(-int(value))
+        elif dtype == 'num' and value_str.startswith('-'):
+            value_str = value_str[1:]
             sign_str = "-"
-        else:
-            value_str = str(value)
+        elif dtype == 'float' and value_str.startswith('-'):
+            value_str = value_str[1:]
+            sign_str = "-"
 
         raw_bytes = value_str.encode(encoding, errors="replace")
 
@@ -377,9 +379,12 @@ class FtpWritterImpl(FtpWritter):
                     raw_bytes = b"-" + pad_byte * (pad_len - 1) + raw_bytes
                 else:
                     raw_bytes = pad_byte * pad_len + raw_bytes
-            # elif dtype in ("float"):
-            #     pad_byte = "0".encode(encoding)
-            #     raw_bytes = raw_bytes + pad_byte * pad_len
+            elif dtype in ("float"):
+                pad_byte = "0".encode(encoding)
+                if sign_str:
+                    raw_bytes = b"-" + pad_byte * (pad_len - 1) + raw_bytes
+                else:
+                    raw_bytes = pad_byte * pad_len + raw_bytes
             else:  # str
                 pad_byte = " ".encode(encoding)
                 raw_bytes = raw_bytes + pad_byte * pad_len
@@ -421,10 +426,10 @@ class FtpWritterImpl(FtpWritter):
                 return 'str'
             elif 'INTEGER' in db_type:
                 return 'num'
-            # elif 'FLOAT' in db_type:
-            #     return 'float'
-            # elif 'DECIMAL' in db_type:
-            #     return 'float'
+            elif 'FLOAT' in db_type:
+                return 'float'
+            elif 'DECIMAL' in db_type:
+                return 'float'
             else:
                 return 'str'
 
@@ -551,10 +556,10 @@ class FtpWritterImpl(FtpWritter):
                 return 'str'
             elif 'INTEGER' in db_type:
                 return 'num'
-            # elif 'FLOAT' in db_type:
-            #     return 'float'
-            # elif 'DECIMAL' in db_type:
-            #     return 'float'
+            elif 'FLOAT' in db_type:
+                return 'float'
+            elif 'DECIMAL' in db_type:
+                return 'float'
             else:
                 return 'str'
 
@@ -628,7 +633,10 @@ class FtpWritterImpl(FtpWritter):
         except Exception as e:
             self.errorExit(f'[S3連線失敗] {e}')
 
-        filelist = s3SrcDao.listFiles(search_key, s3_prefix)
+        try:
+            filelist = s3SrcDao.listFiles(search_key, s3_prefix)
+        except Exception as e:
+            self.errorExit(f'[S3烈出檔案失敗] {e}')
         #self.logger.debug(f'[Source file list ] {filelist}')
 
         cnt = 0
