@@ -759,7 +759,7 @@ class FtpWritterImpl(FtpWritter):
             search_key = self.src_path + '*'
             download_files = self.downloadS3Files(self.src_bucket, self.work_path, search_key, s3_prefix=self.src_path)
             out_file, ctl_file = self.processDbFile(download_files)
-            print(out_file, ctl_file)
+            #print(out_file, ctl_file)
             filelist.append(str(out_file))
             if (ctl_file):
                 filelist.append(str(ctl_file))

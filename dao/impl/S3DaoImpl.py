@@ -154,15 +154,15 @@ if __name__ == "__main__":
         region_name="us-east-1"
     )
     s3.create_bucket(Bucket="my-bucket-123456")
-    # print(s3.list_buckets())
-    # # exit()
+    print(s3.list_buckets())
+    # exit()
 
     s3Dao = S3DaoImpl("my-bucket-123456", "localhost", 4566, "test", "test")
     s3Dao.uploadFile("C:\\Users\\Baldwin\\PycharmProjects\\dataLake\\temp\\aa0000000000001",
                      "myjdbc.db/employee/aa0000000000001")
     s3Dao.uploadFile("C:\\Users\\Baldwin\\PycharmProjects\\dataLake\\temp\\aa0000000000002",
                      "myjdbc.db/employee/aa0000000000002")
-    files = s3Dao.listFiles("myjdbc.db/employee/*")
+    files = s3Dao.listFiles("myjdbc.db/employee/*", "myjdbc.db/employee/")
     print(f"files: {files}")
 
     # delete_files = files[:3]
