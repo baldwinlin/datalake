@@ -59,7 +59,7 @@ class FtpWritterImpl(FtpWritter):
         #Get temp path
         try:
             temp_path = self.main_config.get('LOG','TEMP_PATH')
-            self.temp_path = Path(temp_path) / "fw"
+            self.temp_path = Path(temp_path) / "ftp_put"
             if not self.temp_path.exists():
                 self.temp_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
@@ -274,7 +274,9 @@ class FtpWritterImpl(FtpWritter):
         log_name = f"{self.log_prefix}{timestamp}"
 
         # 建立 log 完整路徑
-        log_dir = log_path / "fw"
+        log_dir = log_path / "ftp_put"
+        if not log_dir.exists():
+            log_dir.mkdir(parents=True, exist_ok=True)
         Logger.Logger(log_dir, log_name)  # 模組日誌
         return logging.getLogger(log_name)
 

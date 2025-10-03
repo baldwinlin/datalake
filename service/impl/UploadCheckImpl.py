@@ -45,7 +45,6 @@ class UploadCheckImpl(UploadCheck):
 
         try:
             temp_path = self.main_config.get('LOG', 'TEMP_PATH')
-            self.temp_path = Path(temp_path) / "uc"
         except Exception as e:
             raise Exception(f"[讀取TEMP path錯誤] {e}")
 
@@ -104,7 +103,9 @@ class UploadCheckImpl(UploadCheck):
         log_name = f"{self.log_prefix}{timestamp}"
 
         # 建立 log 完整路徑
-        log_dir = log_path / "uc"
+        log_dir = log_path / "tmp_upload"
+        if not log_dir.exists():
+            log_dir.mkdir(parents=True, exist_ok=True)
         Logger.Logger(log_dir, log_name)  # 模組日誌
         return logging.getLogger(log_name)
 

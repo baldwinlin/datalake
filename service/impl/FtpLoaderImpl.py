@@ -183,7 +183,7 @@ class FtpLoaderImpl(FtpLoader):
         
     def _initialize_logger(self):
         log_config = self.main_config
-        ftp_log_path = f"{log_config['LOG']['LOG_PATH']}/ftp_loader"
+        ftp_log_path = f"{log_config['LOG']['LOG_PATH']}/ftp_get"
         
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         

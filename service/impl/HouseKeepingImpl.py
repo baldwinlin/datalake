@@ -108,7 +108,7 @@ class HouseKeepingImpl(Housekeeping):
         
     def _initialize_logger(self):
         log_config = self.main_config
-        housekeeping_log_path = f"{log_config['LOG']['LOG_PATH']}/housekeeping"
+        housekeeping_log_path = f"{log_config['LOG']['LOG_PATH']}/housekeep"
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         logger_file_name = f"{self.logger_prefix}_{timestamp}"
 
