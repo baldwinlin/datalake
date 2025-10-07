@@ -455,10 +455,10 @@ class AirbyteExecutionImpl(AirbyteExecution):
         self.logger_main.info(f"讀取 S3 檔案列表驗證同步結果")
         try:
             s3_prefix = str(self.s3_path)
-            search_key = str(self.s3_path + "*")
+            search_key = str(self.s3_path + "*.jsonl")
             self.logger_main.info(f"欲查詢的檔案路徑: {s3_prefix}, 檔案名稱模式: {search_key}")
-            file_objs_list = self.s3Dao.listFiles(search_key, s3_prefix)
-            if len(file_objs_list) <= 1:
+            file_objs_list = self.s3Dao.listFilesWithoutFolder(search_key, s3_prefix)
+            if len(file_objs_list) == 0:
                 self.logger_main.info(f"S3 檔案列表為空")
                 self.logger_main.info(f"S3 只有資料夾: {file_objs_list}")
                 return "S3_EMPTY"

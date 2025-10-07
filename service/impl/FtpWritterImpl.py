@@ -636,7 +636,7 @@ class FtpWritterImpl(FtpWritter):
             self.errorExit(f'[S3連線失敗] {e}')
 
         try:
-            filelist = s3SrcDao.listFiles(search_key, s3_prefix)
+            filelist = s3SrcDao.listFilesWithoutFolder(search_key, s3_prefix)
         except Exception as e:
             self.errorExit(f'[S3烈出檔案失敗] {e}')
         #self.logger.debug(f'[Source file list ] {filelist}')
@@ -759,7 +759,7 @@ class FtpWritterImpl(FtpWritter):
                 filelist.append(str(ctl_file))
         elif self.source_type.lower() == "dbfile":
             search_key = self.src_path + '*'
-            download_files = self.downloadS3Files(self.src_bucket, self.work_path, search_key, s3_prefix=self.src_path)
+            download_files = self.downloadS3Files(self.src_bucket, self.work_path, search_key, s3_prefix=self.src_path) #詢問是否需要將其改成without folder
             out_file, ctl_file = self.processDbFile(download_files)
             #print(out_file, ctl_file)
             filelist.append(str(out_file))
