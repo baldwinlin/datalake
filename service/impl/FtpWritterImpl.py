@@ -119,6 +119,8 @@ class FtpWritterImpl(FtpWritter):
             except Exception as e:
                 raise Exception(f"[讀取S3 config錯誤] {e}")
             self.src_path = pc_config.get('SOURCE', 'PATH', fallback=None)
+            if not self.src_path.endswith('/'):
+                self.src_path = self.src_path + '/'
             self.src_bucket = pc_config.get('SOURCE', 'BUCKET', fallback=None)
             self.src_delimiter = pc_config.get('SOURCE', 'DELIMITER', fallback=None)
             if self.src_delimiter:
@@ -142,6 +144,8 @@ class FtpWritterImpl(FtpWritter):
             except Exception as e:
                 raise Exception(f"[讀取S3 config錯誤] {e}")
             self.src_path = pc_config.get('SOURCE', 'PATH', fallback=None)
+            if not self.src_path.endswith('/'):
+                self.src_path = self.src_path + '/'
             self.src_bucket = pc_config.get('SOURCE', 'BUCKET', fallback=None)
             self.src_encoding = pc_config.get('SOURCE', 'ENCODING', fallback='utf-8')
             self.src_name_pattern = pc_config.get('SOURCE', 'NAME_PATTERN', fallback=None)

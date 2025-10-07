@@ -63,6 +63,8 @@ class AirbyteExecutionImpl(AirbyteExecution):
                 self.s3_sec = get_gpg_decrypt(self.s3_sec_str, self.s3_salt)
                 self.bucket = self.pc_config.get('S3','BUCKET')
                 self.s3_path = self.pc_config.get('S3','S3_PATH')
+                if not self.s3_path.endswith('/'):
+                    self.s3_path = self.s3_path + '/'
             except Exception as e:
                 raise Exception(f"讀取S3 config錯誤: {e}")
 
@@ -460,7 +462,6 @@ class AirbyteExecutionImpl(AirbyteExecution):
             file_objs_list = self.s3Dao.listFilesWithoutFolder(search_key, s3_prefix)
             if len(file_objs_list) == 0:
                 self.logger_main.info(f"S3 檔案列表為空")
-                self.logger_main.info(f"S3 只有資料夾: {file_objs_list}")
                 return "S3_EMPTY"
             else:
                 self.logger_main.info(f"S3 檔案列表: {file_objs_list}")

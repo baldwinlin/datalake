@@ -152,6 +152,8 @@ class FtpLoaderImpl(FtpLoader):
         try:
             self.s3_bucket = self.pc_config.get('TARGET','S3_BUCKET')
             self.target_path = self.pc_config.get('TARGET','PATH')
+            if not self.target_path.endswith('/'):
+                self.target_path = self.target_path + '/'
         except Exception as e:
             raise Exception(f"讀取TARGET config錯誤: {e}")
 
@@ -473,7 +475,7 @@ class FtpLoaderImpl(FtpLoader):
             s3Dao.uploadFile(file_path, s3_file_path)
             s3_prefix = self.target_path
             search_key = s3_file_path
-            uploaded_file = s3Dao.listFiles(search_key, s3_prefix)
+            uploaded_file = s3Dao.listFilesWithoutFolder(search_key, s3_prefix)
         except Exception as e:
             raise Exception(f"上傳檔案 {file} 失敗: {e}")
             
