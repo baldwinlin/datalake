@@ -83,6 +83,8 @@ class HouseKeepingImpl(Housekeeping):
             if self.cleanup_type.lower() == "s3":
                 self.bucket = self.pc_config.get('CLEANUP','BUCKET')
                 self.s3_path = self.pc_config.get('CLEANUP','S3_PATH')
+                if not self.s3_path.endswith('/'):
+                    self.s3_path = self.s3_path + '/'
                 self.file_pattern = self.pc_config.get('CLEANUP','FILE_PATTERN')
                 try:
                     self.s3Dao=S3DaoImpl(self.bucket, self.s3_host, self.s3_port, self.s3_user, self.s3_sec)

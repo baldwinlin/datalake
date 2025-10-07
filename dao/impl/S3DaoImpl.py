@@ -76,8 +76,6 @@ class S3DaoImpl(FileDao):
             raise Exception(f"S3 列出檔案失敗: {e}")
 
     def listFilesWithoutFolder(self, pattern: str, prefix: str) -> List[str]:
-        if not prefix.endswith('/'):
-            prefix = prefix + '/'
         try:
             paginator = self.s3.get_paginator('list_objects_v2')
             page_iterator = paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter='/')
@@ -98,9 +96,6 @@ class S3DaoImpl(FileDao):
             raise Exception(f"S3 列出檔案失敗: {e}")
     
     def listFilesWithDate(self, pattern: str, prefix: str) -> List[str]:
-        if not prefix.endswith('/'):
-            prefix = prefix + '/'
-        
         try:
             paginator = self.s3.get_paginator('list_objects_v2')
             page_iterator = paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter='/')
