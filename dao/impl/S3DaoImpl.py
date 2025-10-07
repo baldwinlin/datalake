@@ -76,6 +76,8 @@ class S3DaoImpl(FileDao):
             raise Exception(f"S3 列出檔案失敗: {e}")
 
     def listFilesWithoutFolder(self, pattern: str, prefix: str) -> List[str]:
+        if not prefix.endswith('/'):
+            prefix = prefix + '/'
         try:
             paginator = self.s3.get_paginator('list_objects_v2')
             page_iterator = paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter='/')
@@ -84,15 +86,21 @@ class S3DaoImpl(FileDao):
             for page in page_iterator:
                 for obj in page.get('Contents', []):
                     key = obj['Key']
+                    print(f"key: {key}")
                     if key.endswith('/'):
+                        print(f"key: {key} is folder, skip")
                         continue
                     if FilenameProcessor._match_name_pattern(key, pattern):
                         files.append(key)
+                        print(f"files: {files}")
             return files
         except Exception as e:
             raise Exception(f"S3 列出檔案失敗: {e}")
     
     def listFilesWithDate(self, pattern: str, prefix: str) -> List[str]:
+        if not prefix.endswith('/'):
+            prefix = prefix + '/'
+        
         try:
             paginator = self.s3.get_paginator('list_objects_v2')
             page_iterator = paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter='/')
@@ -101,9 +109,14 @@ class S3DaoImpl(FileDao):
             for page in page_iterator:
                 for obj in page.get('Contents', []):
                     key = obj['Key']
+                    print(f"key: {key}")
+                    if key.endswith('/'):
+                        print(f"key: {key} is folder, skip")
+                        continue
                     if FilenameProcessor._match_name_pattern(key, pattern):
                         date = obj['LastModified'].astimezone(ZoneInfo('Asia/Taipei')).date()
                         files.append((key, date))
+                        print(f"files: {files}")
             return files
            
         except Exception as e:
