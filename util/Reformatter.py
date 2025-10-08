@@ -12,17 +12,17 @@ class Reformatter:
         return decoded_content
             
     @staticmethod
-    def encoding_to_utf_8(file_path: str, encoding: str, temp_path: str):
+    def encoding_to_target_encoding(file_path: str, source_encoding: str, temp_path: str, target_encoding: str):
         with open(file_path, "rb") as f:
             content = f.read()
 
         # 使用strict模式，如果有解码错误就抛出异常
         try:
-            decoded_content = content.decode(encoding, errors="strict")
+            decoded_content = content.decode(source_encoding, errors="strict")
         except UnicodeDecodeError as e:
-            raise Exception(f"文件 {file_path} 包含無法用 {encoding} 解碼的內容: {e}")
+            raise Exception(f"文件 {file_path} 包含無法用 {source_encoding} 解碼的內容: {e}")
 
-        with open(temp_path, "w", encoding="utf-8") as f:
+        with open(temp_path, "w", encoding=target_encoding) as f:
             f.write(decoded_content)
 
     @staticmethod

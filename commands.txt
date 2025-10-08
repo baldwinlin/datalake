@@ -1,10 +1,12 @@
 mac/linus 執行指令：
-python dataLakeUtils.py --fun FL --mc ./conf/main.conf --fc ./conf/ftpload.conf --args '{"date":"20250811"}'
+python dataLakeUtils.py --fun FL --mc ./conf/main.conf --fc ./conf/ftpload.conf --pc ./conf/ftp_process.conf --args '{"batch_date":"20250811"}'
 python dataLakeUtils.py --fun SQL --mc ./conf/main.conf --fc ./conf/sample_sql.conf --sqlfile xxx --args '{"R_NAME":"Tom"}'
 python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"20250811","command":"build","script":"exec/marts.fx._bond_report.bbgc_descriptive_info","env":"dev","debug":"--debug"}'
 python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"20250811","command":"run","script":"exec/marts.fx._bond_report.bbgc_descriptive_info","env":"dev","debug":"--debug"}'
 python dataLakeUtils.py --fun AIB --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800}'
 python dataLakeUtils.py --fun AIC --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800}'
+python dataLakeUtils.py --fun AL --mc "./conf/main.conf" --fc "./conf/AL_connect.conf" --pc "./conf/AL_pc.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800, "batch_date":"20250918"}'
+python dbCompare2.py --mc ./conf/main.conf --fun data --dc ./conf/db_compare.conf --args '{"src_db_name":"hadp_out_stg", "compare_table":"ftp_writer_test", "tg_db_name":"hadp_out_stg", "compare_date": "20250925", "sample_cnt":"5"}'
 
 windows 執行指令：
 python dataLakeUtils.py --fun FL --mc .\conf\main.conf --fc .\conf\ftpload.conf --args {\"date\":\"20250811\"}
@@ -15,18 +17,8 @@ python dataLakeUtils.py --fun AIB --mc ".\conf\main.conf" --fc ".\conf\airbyte.c
 python dataLakeUtils.py --fun AIC --mc ".\conf\main.conf" --fc ".\conf\airbyte.conf" --args "{\"job_id\":12345,\"poll_sec\":20,\"timeout_sec\":1800}"
 
 
-
-python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"20250811","command":"build","script":"exec/marts.fx._bond_report.bbgc_descriptive_info","env":"dev","debug":"--debug"}'
-
-
 客戶端 執行指令：
 python3.10 /hadoop/application/python_utility_test/dataLakeUtils.py --fun AIB --mc "/hadoop/application/python_utility_test/conf/main.conf" --fc "/hadoop/application/python_utility_test/conf/airbyte.conf" --args '{"connection_name":"HADP_TMP.CTI_ACTIVITY_LOG", "poll_sec":20, "timeout_sec":60}'
 python3.10 /hadoop/application/python_utility_test/dataLakeUtils.py --fun AIC --mc "/hadoop/application/python_utility_test/conf/main.conf" --fc "/hadoop/application/python_utility_test/conf/airbyte.conf" --args '{"job_id":12345,"poll_sec":20,"timeout_sec":1800}'
 
 
-
-python dbCompare2.py --mc ./conf/main.conf  --fun data --dc ./conf/db_compare.conf --args '{"sample_cnt":"5"}' 
-python dbCompare2.py --mc ./conf/main.conf --fun data --dc ./conf/db_compare.conf --args '{"src_db_name":"hadp_out_stg", "compare_table":"ftp_writer_test", "tg_db_name":"hadp_out_stg", "compare_date": "20250925", "sample_cnt":"5"}'
-
-
-python dataLakeUtils.py --fun AL --mc "./conf/main.conf" --fc "./conf/AL_connect.conf" --pc "./conf/AL_pc.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800, "batch_date":"20250918"}'
