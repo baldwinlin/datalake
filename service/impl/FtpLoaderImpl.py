@@ -113,11 +113,11 @@ class FtpLoaderImpl(FtpLoader):
         try:
             self.source_path = self.pc_config.get('SOURCE','PATH')
             self.name_pattern = self.pc_config.get('SOURCE','NAME_PATTERN')
-            self.decoding = self.pc_config.get('SOURCE',"DECODING").lower()
-            if self.decoding == "":
-                raise Exception("DECODING 不得為空值")
-            elif self.decoding not in ["big5", "utf-8"]:
-                raise Exception(f"編碼 {self.decoding} 不支援")
+            self.source_encoding = self.pc_config.get('SOURCE',"ENCODING").lower()
+            if self.source_encoding == "":
+                raise Exception("SOURCE ENCODING 不得為空值")
+            elif self.source_encoding not in ["big5", "utf-8"]:
+                raise Exception(f"編碼 {self.source_encoding} 不支援")
             self.header = self.pc_config.get('SOURCE','HEADER')
             if self.header not in ["Y", "N"]:
                 raise Exception("HEADER 設定只接受 Y,N 設定值")
@@ -154,11 +154,11 @@ class FtpLoaderImpl(FtpLoader):
             self.target_path = self.pc_config.get('TARGET','PATH')
             if not self.target_path.endswith('/'):
                 self.target_path = self.target_path + '/'
-            self.encoding = self.pc_config.get('TARGET','ENCODING').lower()
-            if self.encoding == "":
-                raise Exception("ENCODING 不得為空值")
-            elif self.encoding not in ["big5", "utf-8"]:
-                raise Exception(f"編碼 {self.encoding} 不支援")
+            self.target_encoding = self.pc_config.get('TARGET','ENCODING').lower()
+            if self.target_encoding == "":
+                raise Exception("TARGET ENCODING 不得為空值")
+            elif self.target_encoding not in ["big5", "utf-8"]:
+                raise Exception(f"編碼 {self.target_encoding} 不支援")
         except Exception as e:
             raise Exception(f"讀取TARGET config錯誤: {e}")
 
@@ -336,20 +336,20 @@ class FtpLoaderImpl(FtpLoader):
 
         """檔案轉碼"""
         reformated_files_list = []
-        if self.decoding != self.encoding:
+        if self.source_encoding != self.target_encoding:
             self.logger_main.info(f"開始檔案轉碼處理.....")
-            self.logger_main.info(f"轉換編碼從 {self.decoding} 到 {self.encoding}")
+            self.logger_main.info(f"轉換編碼從 {self.source_encoding} 到 {self.target_encoding}")
             result = self.reformatEncoding(processing_files_list)
             reformated_files_list = result
             if result:
                 self.logger_main.debug(f"開始檢查轉換編碼後的檔案行數.....")
                 proccessing_rows_count = self._getFileRowsCount(processing_files_list, have_controller_file="N")
                 self._checkRowsCountMessage(proccessing_rows_count, "轉換編碼")
-        elif self.decoding == self.encoding:
-            self.logger_main.info(f"編碼為 {self.encoding}，不需要轉換")
+        elif self.source_encoding == self.target_encoding:
+            self.logger_main.info(f"編碼為 {self.target_encoding}，不需要轉換")
             reformated_files_list = processing_files_list
 
-        # if self.decoding == "big5":
+        # if self.source_encoding == "big5":
         #     self.logger_main.info(f"開始檔案轉碼處理.....")
         #     result = self.reformatEncoding(processing_files_list)
         #     reformated_files_list = result
@@ -360,7 +360,7 @@ class FtpLoaderImpl(FtpLoader):
 
         #         # self._checkMessage(processing_files_list, "轉換編碼") ### 等待驗證後被刪除
         #         self.logger_main.debug(f"轉換編碼後，行數檢查完成")
-        # elif self.decoding == "utf-8":
+        # elif self.source_encoding == "utf-8":
         #     self.logger_main.info(f"編碼為 utf-8，不需要轉換")
         #     reformated_files_list = processing_files_list
             
@@ -439,7 +439,7 @@ class FtpLoaderImpl(FtpLoader):
         for file_name in processing_files_list:
             temp_processing_file_path = os.path.join(self.temp_processing_path, file_name)
             try:
-                Reformatter.remove_header(temp_processing_file_path, temp_processing_file_path, self.decoding)
+                Reformatter.remove_header(temp_processing_file_path, temp_processing_file_path, self.source_encoding)
             except Exception as e:
                 self.logger_main.error(f"移除欄位標題行失敗 {file_name} {e}")
                 error_files_list.append(file_name)
@@ -472,7 +472,7 @@ class FtpLoaderImpl(FtpLoader):
             
             """轉換編碼為指定編碼"""
             try:
-                Reformatter.encoding_to_target_encoding(temp_processing_file_path, self.decoding, temp_processing_file_path, self.encoding)
+                Reformatter.encoding_to_target_encoding(temp_processing_file_path, self.source_encoding, temp_processing_file_path, self.target_encoding)
                 reformated_files_list.append(file)
                 self.logger_main.info(f"檔案 {file} 完成轉換編碼")
             except Exception as e:
@@ -666,7 +666,7 @@ class FtpLoaderImpl(FtpLoader):
         for file_name in processing_files_list:
             try:
                 file_path = os.path.join(self.temp_processing_path, file_name)
-                problematic_lines = Validator.checking_decoding(file_path, self.decoding)
+                problematic_lines = Validator.checking_decoding(file_path, self.source_encoding)
                 if len(problematic_lines) > 0:
                     self.logger_main.error(f"檔案 {file_name} 有 {len(problematic_lines)} 行資料有解碼問題，標題欄位是第0行，請根據以下行數檢查資料{problematic_lines} ")
                     problematic_files_list.append(file_name)
