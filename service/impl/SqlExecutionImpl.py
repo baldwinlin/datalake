@@ -113,6 +113,8 @@ class SqlExecutionImpl(SqlExecution):
 
         # 建立 log 完整路徑
         log_dir = log_path / "sql" / subdir
+        if not log_dir.exists():
+            log_dir.mkdir(parents=True, exist_ok=True)
         log_name = f"{filename}_{timestamp}"
 
         # 確保目錄存在
