@@ -164,7 +164,7 @@ class FtpLoaderImpl(FtpLoader):
 
         """設定解壓縮處理"""
         try:
-            self.zip_type = self.pc_config.get('ZIP','ZIP_TYPE')
+            # self.zip_type = self.pc_config.get('ZIP','ZIP_TYPE')
             self.zip_sec_file = self.pc_config.get('ZIP','ZIP_SEC_FILE')
             self.zip_key_file = self.pc_config.get('ZIP','ZIP_SEC_KEY_FILE')
             if self.zip_sec_file and self.zip_key_file:

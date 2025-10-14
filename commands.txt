@@ -3,6 +3,7 @@ python dataLakeUtils.py --fun FL --mc ./conf/main.conf --fc ./conf/ftpload.conf 
 python dataLakeUtils.py --fun SQL --mc ./conf/main.conf --fc ./conf/sample_sql.conf --sqlfile xxx --args '{"R_NAME":"Tom"}'
 python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"20250811","command":"build","script":"exec/marts.fx._bond_report.bbgc_descriptive_info","env":"dev","debug":"--debug"}'
 python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"20250811","command":"run","script":"exec/marts.fx._bond_report.bbgc_descriptive_info","env":"dev","debug":"--debug"}'
+python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"20250811","command":"run","script":"exec/marts.fx._bond_report.bbgc_descriptive_info","env":"dev"}'
 python dataLakeUtils.py --fun AIB --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800}'
 python dataLakeUtils.py --fun AIC --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800}'
 python dataLakeUtils.py --fun AL --mc "./conf/main.conf" --fc "./conf/AL_connect.conf" --pc "./conf/AL_pc.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800, "batch_date":"20250918"}'
@@ -20,5 +21,4 @@ python dataLakeUtils.py --fun AIC --mc ".\conf\main.conf" --fc ".\conf\airbyte.c
 客戶端 執行指令：
 python3.10 /hadoop/application/python_utility_test/dataLakeUtils.py --fun AIB --mc "/hadoop/application/python_utility_test/conf/main.conf" --fc "/hadoop/application/python_utility_test/conf/airbyte.conf" --args '{"connection_name":"HADP_TMP.CTI_ACTIVITY_LOG", "poll_sec":20, "timeout_sec":60}'
 python3.10 /hadoop/application/python_utility_test/dataLakeUtils.py --fun AIC --mc "/hadoop/application/python_utility_test/conf/main.conf" --fc "/hadoop/application/python_utility_test/conf/airbyte.conf" --args '{"job_id":12345,"poll_sec":20,"timeout_sec":1800}'
-
 
