@@ -127,6 +127,8 @@ class FtpWritterImpl(FtpWritter):
                 self.src_delimiter = self.getCorrectDelimiter(self.src_delimiter)
             self.src_encoding = pc_config.get('SOURCE', 'ENCODING', fallback='utf-8')
             self.src_null_value = pc_config.get('SOURCE', 'NULL_VALUE', fallback='\\N')
+            if self.src_null_value == '':
+                self.src_null_value = '\\N'
             self.src_name_pattern = pc_config.get('SOURCE', 'NAME_PATTERN', fallback=None)
             self.src_db_name = pc_config.get('SOURCE', 'DB_NAME', fallback=None)
             self.src_table_name = pc_config.get('SOURCE', 'TABLE_NAME', fallback=None)
