@@ -126,6 +126,9 @@ class FtpWritterImpl(FtpWritter):
             if self.src_delimiter:
                 self.src_delimiter = self.getCorrectDelimiter(self.src_delimiter)
             self.src_encoding = pc_config.get('SOURCE', 'ENCODING', fallback='utf-8')
+            self.src_null_value = pc_config.get('SOURCE', 'NULL_VALUE', fallback='\\N')
+            if self.src_null_value == '':
+                self.src_null_value = '\\N'
             self.src_name_pattern = pc_config.get('SOURCE', 'NAME_PATTERN', fallback=None)
             self.src_db_name = pc_config.get('SOURCE', 'DB_NAME', fallback=None)
             self.src_table_name = pc_config.get('SOURCE', 'TABLE_NAME', fallback=None)
@@ -537,6 +540,24 @@ class FtpWritterImpl(FtpWritter):
                 f.write(ctl_text)
         return out_file, ctl_file
 
+    def getColName(self):
+        sql = f'select * from {self.src_db_name}.{self.src_table_name} LIMIT 1'
+        try:
+            dao = self.connectDb()
+        except Exception as e:
+            self.errorExit(f'[資料庫連線失敗] {e}')
+
+        try:
+            cursor = dao.conn.cursor()
+            cursor.execute(sql)
+            self.logger.debug(f'[SQL] {sql}')
+        except Exception as e:
+            self.errorExit(f"[執行SQL失敗] {e}")
+
+        col_info = cursor.description
+
+        return col_info
+
     def getColMata(self):
         with open(self.tg_col_size_file, "r", encoding="utf-8") as f:
             fields_lens = [int(line.strip()) for line in f if line.strip()]
@@ -586,9 +607,18 @@ class FtpWritterImpl(FtpWritter):
         try:
             if (self.tg_delimiter):
                 out_file = open(out_file_path, "w", encoding=self.tg_encoding, errors="replace", newline="")
+                if self.tg_header.lower() == 'y':
+                    col_info = self.getColName()
+                    col_names = [r[0] for r in col_info]
+                    out_file.write(self.tg_delimiter.join(col_names) + self.tg_new_line_character)
             else:
                 out_file = open(out_file_path, "wb")
                 col_meta = self.getColMata()
+                if self.tg_header.lower() == 'y':
+                    header_bytes = b""
+                    for col_name, col_length, _ in col_meta:
+                        header_bytes += self.formatField(col_name, col_length, "str", self.tg_encoding)
+                    out_file.write(header_bytes + self.tg_new_line_character.encode(self.tg_encoding))
         except Exception as e:
             self.errorExit(f"[開檔{out_file_path}失敗] {e}")
 
@@ -599,7 +629,8 @@ class FtpWritterImpl(FtpWritter):
                 for line in f:
                     line = line.strip()
                     if line:
-                        row = line.strip().split(self.src_delimiter)
+                        org_row = line.strip().split(self.src_delimiter)
+                        row = ['' if item == self.src_null_value else item for item in org_row]
                         process_cnt += 1
                     else:
                         continue
