@@ -126,6 +126,7 @@ class FtpWritterImpl(FtpWritter):
             if self.src_delimiter:
                 self.src_delimiter = self.getCorrectDelimiter(self.src_delimiter)
             self.src_encoding = pc_config.get('SOURCE', 'ENCODING', fallback='utf-8')
+            self.src_null_value = pc_config.get('SOURCE', 'NULL_VALUE', fallback='\\N')
             self.src_name_pattern = pc_config.get('SOURCE', 'NAME_PATTERN', fallback=None)
             self.src_db_name = pc_config.get('SOURCE', 'DB_NAME', fallback=None)
             self.src_table_name = pc_config.get('SOURCE', 'TABLE_NAME', fallback=None)
@@ -626,7 +627,8 @@ class FtpWritterImpl(FtpWritter):
                 for line in f:
                     line = line.strip()
                     if line:
-                        row = line.strip().split(self.src_delimiter)
+                        org_row = line.strip().split(self.src_delimiter)
+                        row = ['' if item == self.src_null_value else item for item in org_row]
                         process_cnt += 1
                     else:
                         continue
