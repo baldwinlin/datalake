@@ -7,7 +7,7 @@ python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --a
 python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"2025-08-11","command":"build_upstream","sql_file":"mart_customers_with_age","target":"trino-iceberg"}'
 python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"2025-08-11","command":"build","sql_file":"stg_customers_with_age","target":"trino-postgres"}'
 python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"2025-08-11","command":"build","sql_file":"mart_customers_with_age","target":"trino-iceberg"}'
-python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"2025-08-11","command":"debug","sql_file":"mart_customers_with_age","target":"trino-iceberg"}'
+python dataLakeUtils.py --fun DBT --mc ./conf/main.conf --fc ./conf/dbt.conf --args '{"batch_date":"2025-08-11","command":"test","sql_file":"mart_customers_with_age","target":"trino-iceberg"}'
 
 python dataLakeUtils.py --fun AIB --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800}'
 python dataLakeUtils.py --fun AIC --mc "./conf/main.conf" --fc "./conf/airbyte.conf" --args '{"connection_name":"DW_to_HADP","poll_sec":20,"timeout_sec":1800}'

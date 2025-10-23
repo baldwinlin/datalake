@@ -54,7 +54,7 @@ class DbtExecutionImpl(DbtExecution):
             self.target = args['target']
             self.debugMode = args.get('debug')
         except Exception as e:
-            raise Exception(f"讀取dbt執行參數錯誤:請檢查是否有提供必要的參數: command, sql_file, batch_date, env")
+            raise Exception(f"讀取dbt執行參數錯誤:請檢查是否有提供必要的參數: command, sql_file, batch_date, target")
 
         # 初始化 logger 變數
         self.main_config = main_config
@@ -69,6 +69,9 @@ class DbtExecutionImpl(DbtExecution):
         Logger.Logger(dbt_log_path, logger_file_name) # 主要日誌
         self.logger_main = logging.getLogger(logger_file_name) # 取得主要 logger 實例
 
+    def errorExit(self, error_message):
+        self.logger_main.error(error_message)
+        exit(1)  
 
     def run(self):
         self._initialize_logger()  # 初始化 logger
@@ -94,45 +97,34 @@ class DbtExecutionImpl(DbtExecution):
                 self.logger_main.info("DBT 執行完成.")
                 return True
             else:
-                self.logger_main.error("DBT 執行失敗.")
-                return False
+                self.errorExit("DBT 執行失敗.")
 
         except Exception as e:
-            self.logger_main.error(f"執行過程中發生例外: {str(e)}")
-            return False
+            self.errorExit(f"執行過程中發生例外: {str(e)}")
 
     def _validate_parameters(self):
         # 檢查必要參數是否存在
-        if not self.command or not self.sql_file or not self.batch_date:
-            self.logger_main.error("必要參數缺失: command, sql_file, batch_date 必須提供。")
-            return False
+        if not self.command or not self.sql_file or not self.batch_date or not self.target:
+            self.errorExit("必要參數缺失: command, sql_file, batch_date, target 必須提供。")
         
         # 檢查 batch_date 格式
         if not isinstance(self.batch_date, str) or len(self.batch_date) != 10:
-            self.logger_main.error("batch_date 必須符合格式 YYYY-MM-DD。")
-            return False
+            self.errorExit("batch_date 必須符合格式 YYYY-MM-DD。")
 
         # 檢查 command 是否在允許的範圍內
         if self.command not in ["build", "build_upstream", "run", "run_upstream", "test", "snapshot", "snapshot_upstream", "docs"]:
-            self.logger_main.error(f"無效的 command: {self.command}. 允許的值為 'build', 'build_upstream', 'run', 'run_upstream', 'test', 'snapshot', 'snapshot_upstream', 'docs'.")
-            return False
+            self.errorExit(f"無效的 command: {self.command}. 允許的值為 'build', 'build_upstream', 'run', 'run_upstream', 'test', 'snapshot', 'snapshot_upstream', 'docs'.")
+
+        #檢查 shellBase 是否正確存在
+        if not Path(self.shellBase).exists():
+            self.errorExit(f"shellBase 不存在: {self.shellBase}")
+        
+        #檢查 dbt_project_name 是否正確存在
+        dbt_project_path = Path(self.shellBase) / self.dbt_project_name
+        if not dbt_project_path.exists():
+            self.errorExit(f"dbt_project_name 不存在: {dbt_project_path}")
+        
         return True
-        
-        # 檢查 env 是否在允許的範圍內
-        # if self.target and self.target not in ["dev", "sit", "uat", "prod"]:
-        #     self.logger_main.error(f"無效的環境變數: {self.target}. 允許的值為 'dev', 'sit', 'uat', 'prod'.")
-        #     return False
-        
-        # # 檢查 batch_date 格式為 YYYYMMDD、YYYY-MM-DD 或 YYYY/MM/DD
-        # if not isinstance(self.batch_date, str) or len(self.batch_date) not in [8, 10]:
-        #     for fmt in ("%Y%m%d", "%Y-%m-%d", "%Y/%m/%d"):
-        #         try:
-        #             datetime.strptime(self.batch_date, fmt)
-        #             return True
-        #         except ValueError:
-        #             continue    
-        #     self.logger_main.error("batch_date 格式錯誤，需為 YYYYMMDD、YYYY-MM-DD 或 YYYY/MM/DD。")
-        #     return False
 
     def chooseShellFile(self):
         """選擇對應的 shell 檔案"""
@@ -178,8 +170,47 @@ class DbtExecutionImpl(DbtExecution):
         return safe_args
 
     def connectShell(self, args):
-        result = subprocess.run(args)
+        result = subprocess.run(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        if result.stdout:
+            for line in result.stdout.splitlines():
+                self.logger_main.info(line)
+
+        if result.stderr:
+            for line in result.stderr.splitlines():
+                self.logger_main.warning(line)
+
         self.logger_main.info("Exit code: %s", result.returncode)
 
+        combined_output = "\n".join(filter(None, [result.stdout, result.stderr]))
+
+        if self._contains_error_output(combined_output):
+            self.errorExit("DBT 執行未選取任何SQL檔案，視為失敗。")
+
         return result.returncode == 0
+
+    def _contains_error_output(self, output: str) -> bool:
+        if not output:
+            self.errorExit("Shell 執行結果為空，視為失敗。")
         
+        error_types = {
+            "does not match any enabled nodes": "執行未選取任何SQL檔案，視為失敗。",
+            "does not match any nodes": "執行未選取任何SQL檔案，視為失敗。",
+            "no nodes selected": "執行未選取任何SQL檔案，視為失敗。",
+            "nothing to do. try checking your model configs": "執行未選取任何SQL檔案，視為失敗。",
+            "does not have a target named": "不正確的連線名稱，請檢查target是否正確。",
+        }
+        
+
+        output_lower = output.lower()
+        
+        for error_type, error_message in error_types.items():
+            if error_type in output_lower:
+              self.logger_main.error(error_message)
+              return True
+        return False
