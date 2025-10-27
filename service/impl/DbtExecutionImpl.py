@@ -25,15 +25,16 @@ import datetime
 
 class DbtExecutionImpl(DbtExecution):
     def __init__(self, main_config, config, args):
-        # config 是從 dbt.conf 來的配置
         self.config = config
         args = json.loads(args)
        
-        # 從 dbt.conf 讀取 shell 和 sec 配置
         try:
-            self.shellBase = config['SHELL']['SHELL_BASE']
+            self.projectBase = config['DBT']['PROJECT_BASE']
+            self.projectBase = os.path.expandvars(os.path.expanduser(self.projectBase.strip()))
+            self.shellBase = self.projectBase + "/bin"
             self.shellBase = os.path.expandvars(os.path.expanduser(self.shellBase.strip()))
-            self.dbt_project_name = self.config.get('DBT','DBT_PROJECT_NAME')
+            self.dbt_project_name = config['DBT']['DBT_PROJECT_NAME']
+            
             #測試時需要解開註解
             self.user = self.config.get('SEC','DBT_USER')
             self.sec = self.config.get('SEC','DBT_SEC')
@@ -46,17 +47,26 @@ class DbtExecutionImpl(DbtExecution):
         except Exception as e:
             raise Exception(f"讀取dbt config錯誤: {e}")
         
-        # 從 args 讀取 dbt 執行參數
+        # 測試用
+        print(f"user: {self.user}")
+        print(f"sec: {self.sec}")
+        
         try:
             self.command = args['command']
-            self.sql_file = args['sql_file']
-            self.batch_date = args['batch_date']
             self.target = args['target']
-            self.debugMode = args.get('debug')
         except Exception as e:
-            raise Exception(f"讀取dbt執行參數錯誤:請檢查是否有提供必要的參數: command, sql_file, batch_date, target")
+            raise Exception(f"讀取dbt執行參數錯誤:請檢查是否有提供必要的參數: command, target")
+        
+        self.sql_file = args.get('sql_file', None)
+        self.batch_date = args.get('batch_date', None)
+        self.debugMode = args.get('debug', False)
+        if self.command in ["build", "build_upstream", "run", "run_upstream", "test", "snapshot", "snapshot_upstream"]:
+            if not self.sql_file or not self.batch_date:
+                raise Exception("必要參數缺失: sql_file 和 batch_date 必須提供。")
+        elif self.command in ["docs"]:
+            if not self.batch_date:
+                raise Exception("必要參數缺失: batch_date 必須提供。")
 
-        # 初始化 logger 變數
         self.main_config = main_config
         self.logger_main = None
         self.log_level = self.main_config["LOG"].get("LOG_LEVEL", "INFO").upper()
@@ -65,7 +75,12 @@ class DbtExecutionImpl(DbtExecution):
         log_config = self.main_config
         dbt_log_path = f"{log_config['LOG']['LOG_PATH']}/dbt"
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        logger_file_name = f"{self.sql_file}_{timestamp}"
+        
+        if self.sql_file:
+            logger_file_name = f"{self.command}_{self.sql_file}_{timestamp}"
+        else:
+            logger_file_name = f"{self.command}_{timestamp}"
+        
         Logger.Logger(dbt_log_path, logger_file_name) # 主要日誌
         self.logger_main = logging.getLogger(logger_file_name) # 取得主要 logger 實例
 
@@ -83,16 +98,34 @@ class DbtExecutionImpl(DbtExecution):
                 self.logger_main.info("所有必要參數已驗證通過。")
             
             # 選擇 shell 檔案
-            shell = self.chooseShellFile()
+            try:
+                shell = self.chooseShellFile()
+            except Exception as e:
+                self.errorExit(f"選擇 shell 檔案時發生錯誤: {str(e)}")
+            self.logger_main.info(f"選擇 shell 檔案: {shell}")
             
             # 創建 CLI 參數
-            shell_args = self.createCLI(shell)
+            try:
+                shell_args = self.createCLI(shell)
+            except Exception as e:
+                self.errorExit(f"創建 CLI 參數時發生錯誤: {str(e)}")
+            self.logger_main.info(f"創建 CLI 參數完成")
+            
             # 創建安全的 log 版本（遮罩敏感參數）
-            safe_args = self._create_safe_log_args(shell_args)
+            try:
+                safe_args = self._create_safe_log_args(shell_args)
+            except Exception as e:
+                self.errorExit(f"創建安全的 log 版本時發生錯誤: {str(e)}")
+            self.logger_main.info(f"創建安全的 log 版本完成")
             self.logger_main.info(f'執行 shell 命令: {" ".join(safe_args)}')
                 
             # 執行 shell 命令
-            success = self.connectShell(shell_args)
+            try:
+                success = self.connectShell(shell_args)
+            except Exception as e:
+                self.errorExit(f"執行 shell 命令時發生錯誤: {str(e)}")
+            self.logger_main.info(f"執行 shell 命令完成")
+            
             if success:
                 self.logger_main.info("DBT 執行完成.")
                 return True
@@ -103,24 +136,21 @@ class DbtExecutionImpl(DbtExecution):
             self.errorExit(f"執行過程中發生例外: {str(e)}")
 
     def _validate_parameters(self):
-        # 檢查必要參數是否存在
-        if not self.command or not self.sql_file or not self.batch_date or not self.target:
-            self.errorExit("必要參數缺失: command, sql_file, batch_date, target 必須提供。")
-        
         # 檢查 batch_date 格式
-        if not isinstance(self.batch_date, str) or len(self.batch_date) != 10:
-            self.errorExit("batch_date 必須符合格式 YYYY-MM-DD。")
+        if self.batch_date:
+            if not isinstance(self.batch_date, str) or len(self.batch_date) != 10:
+                self.errorExit("batch_date 必須符合格式 YYYY-MM-DD。")
 
         # 檢查 command 是否在允許的範圍內
-        if self.command not in ["build", "build_upstream", "run", "run_upstream", "test", "snapshot", "snapshot_upstream", "docs"]:
-            self.errorExit(f"無效的 command: {self.command}. 允許的值為 'build', 'build_upstream', 'run', 'run_upstream', 'test', 'snapshot', 'snapshot_upstream', 'docs'.")
+        if self.command not in ["debug", "build", "build_upstream", "run", "run_upstream", "test", "snapshot", "snapshot_upstream", "docs"]:
+            self.errorExit(f"無效的 command: {self.command}. 允許的值為 'debug', 'build', 'build_upstream', 'run', 'run_upstream', 'test', 'snapshot', 'snapshot_upstream', 'docs'.")
 
         #檢查 shellBase 是否正確存在
         if not Path(self.shellBase).exists():
             self.errorExit(f"shellBase 不存在: {self.shellBase}")
         
         #檢查 dbt_project_name 是否正確存在
-        dbt_project_path = Path(self.shellBase) / self.dbt_project_name
+        dbt_project_path = Path(self.projectBase) / self.dbt_project_name
         if not dbt_project_path.exists():
             self.errorExit(f"dbt_project_name 不存在: {dbt_project_path}")
         
@@ -129,14 +159,15 @@ class DbtExecutionImpl(DbtExecution):
     def chooseShellFile(self):
         """選擇對應的 shell 檔案"""
         SHELL_MAP = {
-            "build": "bin/dbt_build_node.sh",
-            "build_upstream": "bin/dbt_build_node_upstream.sh",
-            "run": "bin/dbt_run_node.sh",
-            "run_upstream": "bin/dbt_run_node_upstream.sh",
-            "test": "bin/dbt_test_node.sh",
-            "snapshot": "bin/dbt_snapshot_node.sh",
-            "snapshot_upstream": "bin/dbt_snapshot_node_upstream.sh",
-            "docs": "bin/dbt_docs_serve.sh",
+            "debug": "dbt_debug.sh",
+            "build": "dbt_build_node.sh",
+            "build_upstream": "dbt_build_node_upstream.sh",
+            "run": "dbt_run_node.sh",
+            "run_upstream": "dbt_run_node_upstream.sh",
+            "test": "dbt_test_node.sh",
+            "snapshot": "dbt_snapshot_node.sh",
+            "snapshot_upstream": "dbt_snapshot_node_upstream.sh",
+            "docs": "dbt_docs_serve.sh",
         }
         # 根據 command 選擇對應的 shell 檔案
         shell = Path(self.shellBase) / SHELL_MAP.get(self.command)
@@ -144,15 +175,33 @@ class DbtExecutionImpl(DbtExecution):
     
     def createCLI(self, shell):
         # 基本執行指令參數組合
-        args = [
-            "bash", str(shell),
-            self.sql_file,
-            self.batch_date,
-            self.target,
-            self.dbt_project_name,
-            self.user,
-            self.sec,
-        ]
+        if self.command not in ["docs", "debug"]:
+            args = [
+                "bash", str(shell),
+                self.sql_file,
+                self.batch_date,
+                self.target,
+                self.dbt_project_name,
+                self.user,
+                self.sec,
+            ]
+        elif self.command in ["docs"]:
+            args = [
+                "bash", str(shell),
+                self.batch_date,
+                self.target,
+                self.dbt_project_name,
+                self.user,
+                self.sec,
+            ]
+        elif self.command in ["debug"]:
+            args = [
+                "bash", str(shell),
+                self.target,
+                self.dbt_project_name,
+                self.user,
+                self.sec,
+            ]
 
         if self.debugMode:
             if self.debugMode in ["--debug", "Y", "y", "yes", "YES", "True", "true", "TRUE", "1"]:
@@ -164,9 +213,13 @@ class DbtExecutionImpl(DbtExecution):
     def _create_safe_log_args(self, args):
         """創建安全的 log 版本，遮罩敏感參數"""
         safe_args = args.copy()
-        # 假設密碼在第5個位置（索引4），根據你的 createCLI 方法
-        safe_args[6] = "***"  
-        safe_args[7] = "***"  
+        
+        if self.sql_file:
+            safe_args[6] = "***"  
+            safe_args[7] = "***"  
+        else:
+            safe_args[5] = "***"  
+            safe_args[6] = "***"  
         return safe_args
 
     def connectShell(self, args):
