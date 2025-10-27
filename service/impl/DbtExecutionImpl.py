@@ -53,13 +53,17 @@ class DbtExecutionImpl(DbtExecution):
         
         try:
             self.command = args['command']
-            self.target = args['target']
         except Exception as e:
-            raise Exception(f"讀取dbt執行參數錯誤:請檢查是否有提供必要的參數: command, target")
+            raise Exception(f"讀取dbt執行參數錯誤:請檢查是否有提供必要的參數: command")
         
-        self.sql_file = args.get('sql_file', None)
-        self.batch_date = args.get('batch_date', None)
-        self.debugMode = args.get('debug', False)
+        try:
+            self.target = args.get('target', "prod")
+            self.sql_file = args.get('sql_file', None)
+            self.batch_date = args.get('batch_date', None)
+            self.debugMode = args.get('debug', False)
+        except Exception as e:
+            raise Exception(f"讀取dbt執行參數錯誤: {e}")
+            
         if self.command in ["build", "build_upstream", "run", "run_upstream", "test", "snapshot", "snapshot_upstream"]:
             if not self.sql_file or not self.batch_date:
                 raise Exception("必要參數缺失: sql_file 和 batch_date 必須提供。")
