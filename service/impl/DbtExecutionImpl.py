@@ -36,14 +36,14 @@ class DbtExecutionImpl(DbtExecution):
             self.dbt_project_name = config['DBT']['DBT_PROJECT_NAME']
             
             #測試時需要解開註解
-            self.user = self.config.get('SEC','DBT_USER')
-            self.sec = self.config.get('SEC','DBT_SEC')
+            # self.user = self.config.get('SEC','DBT_USER')
+            # self.sec = self.config.get('SEC','DBT_SEC')
             #正式使用時需要解開註解
-            # self.dbt_sec_file = self.config.get('SEC','DBT_SEC_FILE')
-            # self.dbt_key_file = self.config.get('SEC','DBT_SEC_KEY')
-            # self.user, self.sec_str = readSecFile(self.dbt_sec_file)
-            # self.salt = readSaltFile(self.dbt_key_file)
-            # self.sec = get_gpg_decrypt(self.sec_str, self.salt)
+            self.dbt_sec_file = self.config.get('SEC','DBT_SEC_FILE')
+            self.dbt_key_file = self.config.get('SEC','DBT_SEC_KEY')
+            self.user, self.sec_str = readSecFile(self.dbt_sec_file)
+            self.salt = readSaltFile(self.dbt_key_file)
+            self.sec = get_gpg_decrypt(self.sec_str, self.salt)
         except Exception as e:
             raise Exception(f"讀取dbt config錯誤: {e}")
         
@@ -138,12 +138,18 @@ class DbtExecutionImpl(DbtExecution):
     def _validate_parameters(self):
         # 檢查 batch_date 格式
         if self.batch_date:
-            if not isinstance(self.batch_date, str) or len(self.batch_date) != 10:
-                self.errorExit("batch_date 必須符合格式 YYYY-MM-DD。")
+            try:
+                self.batch_date = datetime.datetime.strptime(self.batch_date, "%Y%m%d").strftime("%Y-%m-%d")
+            except ValueError:
+                self.errorExit("batch_date 必須符合格式 YYYYMMDD。")
 
         # 檢查 command 是否在允許的範圍內
         if self.command not in ["debug", "build", "build_upstream", "run", "run_upstream", "test", "snapshot", "snapshot_upstream", "docs"]:
             self.errorExit(f"無效的 command: {self.command}. 允許的值為 'debug', 'build', 'build_upstream', 'run', 'run_upstream', 'test', 'snapshot', 'snapshot_upstream', 'docs'.")
+
+        # 檢查 target 是否在允許的範圍內
+        if self.target not in ["uat", "sit", "prod"]:
+            self.errorExit(f"無效的 target: {self.target}. 允許的值為 'uat', 'sit', 'prod'.")
 
         #檢查 shellBase 是否正確存在
         if not Path(self.shellBase).exists():
@@ -214,12 +220,15 @@ class DbtExecutionImpl(DbtExecution):
         """創建安全的 log 版本，遮罩敏感參數"""
         safe_args = args.copy()
         
-        if self.sql_file:
+        if self.command  not in ["docs", "debug"]:
             safe_args[6] = "***"  
             safe_args[7] = "***"  
-        else:
+        elif self.command in ["docs"]:
             safe_args[5] = "***"  
             safe_args[6] = "***"  
+        elif self.command in ["debug"]:
+            safe_args[4] = "***"  
+            safe_args[5] = "***"  
         return safe_args
 
     def connectShell(self, args):
