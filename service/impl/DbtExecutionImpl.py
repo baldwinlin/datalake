@@ -33,14 +33,14 @@ class DbtExecutionImpl(DbtExecution):
             self.projectBase = os.path.expandvars(os.path.expanduser(self.projectBase.strip()))
             self.shellBase = self.projectBase + "/bin"
             self.shellBase = os.path.expandvars(os.path.expanduser(self.shellBase.strip()))
-            self.dbt_project_name = config['DBT']['DBT_PROJECT_NAME']
+            self.dbt_project_name = config['DBT']['PROJECT_NAME']
             
             #測試時需要解開註解
             # self.user = self.config.get('SEC','DBT_USER')
             # self.sec = self.config.get('SEC','DBT_SEC')
             #正式使用時需要解開註解
-            self.dbt_sec_file = self.config.get('SEC','DBT_SEC_FILE')
-            self.dbt_key_file = self.config.get('SEC','DBT_SEC_KEY')
+            self.dbt_sec_file = self.config.get('SEC','SEC_FILE')
+            self.dbt_key_file = self.config.get('SEC','SEC_KEY')
             self.user, self.sec_str = readSecFile(self.dbt_sec_file)
             self.salt = readSaltFile(self.dbt_key_file)
             self.sec = get_gpg_decrypt(self.sec_str, self.salt)
