@@ -67,6 +67,9 @@ class FtpWritterImpl(FtpWritter):
 
         try:
             self.driver_path = self.main_config.get('DB_DRIVER','DRIVER_PATH')
+            self.driver_jar = self.main_config.get('DB_DRIVER', 'DRIVER_JAR')
+            self.driver_class = self.main_config.get('DB_DRIVER', 'DRIVER_CLASS')
+            self.jdbc_url = self.main_config.get('DB_DRIVER', 'JDBC_URL')
         except Exception as e:
             raise Exception(f"[讀取DB dreiver path錯誤] {e}")
 
@@ -288,14 +291,17 @@ class FtpWritterImpl(FtpWritter):
         return logging.getLogger(log_name)
 
     def connectDb(self):
-        if (self.driver.lower() == 'hive2'):
-            driver_class = "org.apache.kyuubi.jdbc.KyuubiHiveDriver"
-            jdbc_url = f"jdbc:hive2://{self.host}:{self.port}/{self.db_name};auth=LDAP"
-            driver_jar = f"{self.driver_path}/kyuubi-hive-jdbc-shaded-1.10.2.jar"
-        elif (self.driver.lower() == 'mysql'):
-            driver_class = "com.mysql.cj.jdbc.Driver"
-            jdbc_url = f"jdbc:mysql://{self.host}:{self.port}/{self.db_name}"
-            driver_jar = f"{self.driver_path}\\mysql-connector-j-9.4.0.jar"
+        # if (self.driver.lower() == 'hive2'):
+        #     driver_class = "org.apache.kyuubi.jdbc.KyuubiHiveDriver"
+        #     jdbc_url = f"jdbc:hive2://{self.host}:{self.port}/{self.db_name};auth=LDAP"
+        #     driver_jar = f"{self.driver_path}/kyuubi-hive-jdbc-shaded-1.10.2.jar"
+        # elif (self.driver.lower() == 'mysql'):
+        #     driver_class = "com.mysql.cj.jdbc.Driver"
+        #     jdbc_url = f"jdbc:mysql://{self.host}:{self.port}/{self.db_name}"
+        #     driver_jar = f"{self.driver_path}\\mysql-connector-j-9.4.0.jar"
+        driver_class = self.driver_class
+        driver_jar = self.driver_jar
+        jdbc_url = self.jdbc_url.format(self.host, self.port, self.db_name)
 
         dao = JdbcDaoImpl(driver_class, jdbc_url, self.db_user, self.db_sec, driver_jar)
 
