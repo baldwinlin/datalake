@@ -5,6 +5,8 @@ venv
 venv_pro
 
 conf/
+localconf/
+sql/
 
 # Python
 __pycache__/
