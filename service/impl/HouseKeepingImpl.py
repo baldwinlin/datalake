@@ -35,8 +35,13 @@ class HouseKeepingImpl(Housekeeping):
         self.main_config = main_config
         self.fc_config = fc_config
         self.pc_config = pc_config
-        self.args = json.loads(args)
-        self.batch_date =str(self.args.get('batch_date'))
+        self.args_str = args
+        if self.args_str:
+            self.args = json.loads(self.args_str)
+            self.batch_date =str(self.args.get('batch_date'))
+        else:
+            raise Exception("args 不得為空值")
+        
         
         #logger
         self.logger_main = None

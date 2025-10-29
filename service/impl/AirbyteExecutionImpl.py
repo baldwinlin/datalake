@@ -74,11 +74,15 @@ class AirbyteExecutionImpl(AirbyteExecution):
             except Exception as e:
                 raise Exception(f"建立S3 DAO時發生錯誤: {e}")
 
-
-        args = json.loads(args)
-        self.connection_name = str(args["connection_name"])
-        self.poll_sec = int(args.get("poll_sec", 180))
-        self.timeout_sec = int(args.get("timeout_sec", 3600))
+        self.args_str = args
+        if self.args_str:
+            self.args = json.loads(self.args_str)
+        else:
+            raise Exception("args 不得為空值")
+        
+        self.connection_name = str(self.args["connection_name"])
+        self.poll_sec = int(self.args.get("poll_sec", 180))
+        self.timeout_sec = int(self.args.get("timeout_sec", 3600))
 
         self.connection_id = None
         self.source_id = None
