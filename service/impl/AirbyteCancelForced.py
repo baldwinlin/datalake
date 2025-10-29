@@ -44,10 +44,15 @@ class AirbyteCancelForcedImpl(AirbyteCancel):
         self.salt = readSaltFile(self.key_file)
         self.db_sec = get_gpg_decrypt(self.sec_str, self.salt)
 
-        args = json.loads(args)
-        self.connection_name = str(args.get("connection_name"))
-        self.poll_sec = int(args.get("poll_sec", 180)) 
-        self.timeout_sec = int(args.get("timeout_sec", 3600)) 
+        self.args_str = args
+        if self.args_str:
+            self.args = json.loads(self.args_str)
+        else:
+            raise Exception("args 不得為空值")
+    
+        self.connection_name = str(self.args.get("connection_name"))
+        self.poll_sec = int(self.args.get("poll_sec", 180)) 
+        self.timeout_sec = int(self.args.get("timeout_sec", 3600)) 
 
         self.job_id = None
 

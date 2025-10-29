@@ -25,45 +25,44 @@ import datetime
 
 class DbtExecutionImpl(DbtExecution):
     def __init__(self, main_config, config, args):
+        """讀取 config 參數"""
         self.config = config
-        args = json.loads(args)
-       
         try:
-            self.projectBase = config['DBT']['PROJECT_BASE']
+            self.projectBase = self.config['DBT']['PROJECT_BASE']
             self.projectBase = os.path.expandvars(os.path.expanduser(self.projectBase.strip()))
             self.shellBase = self.projectBase + "/bin"
             self.shellBase = os.path.expandvars(os.path.expanduser(self.shellBase.strip()))
-            self.dbt_project_name = config['DBT']['PROJECT_NAME']
+            self.dbt_project_name = self.config['DBT']['PROJECT_NAME']
             
             #測試時需要解開註解
             # self.user = self.config.get('SEC','DBT_USER')
             # self.sec = self.config.get('SEC','DBT_SEC')
             #正式使用時需要解開註解
-            self.dbt_sec_file = self.config.get('SEC','SEC_FILE')
-            self.dbt_key_file = self.config.get('SEC','SEC_KEY')
+            self.dbt_sec_file = self.config['SEC']['SEC_FILE']
+            self.dbt_key_file = self.config['SEC']['KEY_FILE']
             self.user, self.sec_str = readSecFile(self.dbt_sec_file)
             self.salt = readSaltFile(self.dbt_key_file)
             self.sec = get_gpg_decrypt(self.sec_str, self.salt)
         except Exception as e:
             raise Exception(f"讀取dbt config錯誤: {e}")
         
-        # 測試用
-        print(f"user: {self.user}")
-        print(f"sec: {self.sec}")
-        
+        """讀取 args 參數"""
+        self.args_str = args
+        if self.args_str:
+            self.args = json.loads(self.args_str)
+        else:
+            raise Exception("args 不得為空值")
         try:
-            self.command = args['command']
+            self.command = self.args['command']
         except Exception as e:
-            raise Exception(f"讀取dbt執行參數錯誤:請檢查是否有提供必要的參數: command")
-        
+            raise Exception(f"讀取dbt執行參數錯誤:請檢查是否有提供必要的參數: command")    
         try:
-            self.target = args.get('target', "prod")
-            self.sql_file = args.get('sql_file', None)
-            self.batch_date = args.get('batch_date', None)
-            self.debugMode = args.get('debug', False)
+            self.target = self.args.get('target', "prod")
+            self.sql_file = self.args.get('sql_file', None)
+            self.batch_date = self.args.get('batch_date', None)
+            self.debugMode = self.args.get('debug', False)
         except Exception as e:
             raise Exception(f"讀取dbt執行參數錯誤: {e}")
-            
         if self.command in ["build", "build_upstream", "run", "run_upstream", "test", "snapshot", "snapshot_upstream"]:
             if not self.sql_file or not self.batch_date:
                 raise Exception("必要參數缺失: sql_file 和 batch_date 必須提供。")
